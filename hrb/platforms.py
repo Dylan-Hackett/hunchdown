@@ -88,7 +88,7 @@ def is_main_account_url(url: str, platform: str | None = None) -> bool:
 
 
 def extract_handle(url: str, platform: str | None = None) -> str | None:
-    """Best-effort handle/username extraction for the Account Locator."""
+    """Best-effort handle/username extraction for the Accounts Located doc."""
     if platform is None:
         platform = classify(url)
     path = (urlparse(url).path or "").strip("/")

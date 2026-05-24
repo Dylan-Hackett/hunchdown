@@ -1,0 +1,20 @@
+{
+  "platform": "tiktok",
+  "post_style": "main_account",
+  "url_patterns": [
+    "tiktok\\.com/@[^/?#]+/?(?:$|[?#])"
+  ],
+  "crop": {
+    "left_pct": 15.55,
+    "top_pct": 1.87,
+    "right_pct": 38.21,
+    "bottom_pct": 70.46
+  },
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.053
+  },
+  "notes": "TikTok profile/landing page crop, derived from manually-cropped reference in Word.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-05-24"
+}

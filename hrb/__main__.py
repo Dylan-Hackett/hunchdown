@@ -7,7 +7,7 @@ Usage:
 
 Outputs:
     output/<case>_<date>/
-        00_Account_Locator.docx
+        00_Accounts_Located.docx
         01_Facebook_Exhibits.docx
         02_Instagram_Exhibits.docx
         ...
@@ -22,23 +22,22 @@ import hashlib
 import json
 import re
 import sys
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .dates import DateResult, extract as extract_date
-from .locator import build_account_locator
 from .parser import parse_docx, Capture, ParsedDocx
 from .pdf_export import ConverterUnavailable, export as export_pdfs
 from .platforms import (
     PLATFORM_DISPLAY_NAMES,
     PLATFORM_ORDER,
     classify,
+    extract_handle,
     is_main_account_url,
 )
 from .presets import Preset, PresetLibrary
 from .raw_export import RawExport
-from .writer import ExhibitInput, write_platform_docx
+from .writer import ExhibitInput, write_locator_docx, write_platform_docx
 
 
 PLATFORM_FILE_ORDER = {p: i + 1 for i, p in enumerate(PLATFORM_ORDER)}
@@ -196,15 +195,43 @@ def run(
                 "preset_post_style": ex.preset.post_style,
             })
 
-    locator_path = case_dir / "00_Account_Locator.docx"
-    locator_entries = build_account_locator(
-        main_account_captures=main_accounts,
-        platform_exhibit_counts=platform_exhibit_counts,
-        platform_exhibit_filenames=platform_exhibit_filenames,
-        output_path=locator_path,
-        case_name=case_name,
-    )
-    docx_outputs.insert(0, locator_path)
+    locator_path = case_dir / "00_Accounts_Located.docx"
+    by_platform_accounts: dict[str, list[Capture]] = {}
+    for c in main_accounts:
+        by_platform_accounts.setdefault(classify(c.url), []).append(c)
+
+    locator_sections: list[tuple[str, list[tuple[Capture, Preset]]]] = []
+    locator_entries: list[dict] = []
+    for platform in PLATFORM_ORDER:
+        accounts = sorted(
+            by_platform_accounts.get(platform, []),
+            key=lambda c: c.capture_date_raw,
+        )
+        if not accounts:
+            continue
+        items: list[tuple[Capture, Preset]] = []
+        for c in accounts:
+            preset, _ = presets.match(c.url, platform)
+            items.append((c, preset))
+            locator_entries.append({
+                "platform": platform,
+                "handle": extract_handle(c.url, platform),
+                "url": c.url,
+                "capture_date_raw": c.capture_date_raw,
+                "sha256": c.sha256,
+                "exhibit_doc_filename": platform_exhibit_filenames.get(platform),
+                "exhibit_count": platform_exhibit_counts.get(platform, 0),
+            })
+        locator_sections.append((PLATFORM_DISPLAY_NAMES[platform], items))
+
+    if locator_sections:
+        write_locator_docx(
+            parsed,
+            sections=locator_sections,
+            output_path=locator_path,
+            doc_title=f"Accounts Located — {case_name}",
+        )
+        docx_outputs.insert(0, locator_path)
 
     review_path = case_dir / "REVIEW_REQUIRED.docx"
     if review_queue:
@@ -238,7 +265,7 @@ def run(
         "platforms_found": sorted(posts_by_platform.keys()),
         "pdf_export_status": pdf_status,
         "exhibits": manifest_exhibits,
-        "main_accounts": [asdict(e) for e in locator_entries],
+        "main_accounts": locator_entries,
         "review_queue": [
             {
                 "url": c.url,

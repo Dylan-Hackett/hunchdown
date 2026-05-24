@@ -1,0 +1,21 @@
+{
+  "platform": "x",
+  "post_style": "main_account",
+  "url_patterns": [
+    "x\\.com/[^/?#]+/?(?:$|[?#])",
+    "twitter\\.com/[^/?#]+/?(?:$|[?#])"
+  ],
+  "crop": {
+    "left_pct": 26.35,
+    "top_pct": 20.93,
+    "right_pct": 34.78,
+    "bottom_pct": 41.5
+  },
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.065
+  },
+  "notes": "X/Twitter profile/landing page crop, derived from manually-cropped reference in Word.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-05-24"
+}

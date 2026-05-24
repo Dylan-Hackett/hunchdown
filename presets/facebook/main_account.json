@@ -1,0 +1,20 @@
+{
+  "platform": "facebook",
+  "post_style": "main_account",
+  "url_patterns": [
+    "facebook\\.com/[^/?#]+/?(?:$|[?#])"
+  ],
+  "crop": {
+    "left_pct": 13.12,
+    "top_pct": 59.47,
+    "right_pct": 14.07,
+    "bottom_pct": 3.44
+  },
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.096
+  },
+  "notes": "Facebook profile/landing page crop, derived from manually-cropped reference in Word.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-05-24"
+}

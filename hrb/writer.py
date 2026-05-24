@@ -257,14 +257,24 @@ def _section_heading(text: str) -> etree._Element:
     return _make_para([text], bold_first=True)
 
 
-def _modify_table_for_exhibit(
+def _make_page_break() -> etree._Element:
+    """A paragraph containing a single hard page break."""
+    p = etree.Element(f"{{{W_NS}}}p")
+    r = etree.SubElement(p, f"{{{W_NS}}}r")
+    br = etree.SubElement(r, f"{{{W_NS}}}br")
+    br.set(f"{{{W_NS}}}type", "page")
+    return p
+
+
+def _resize_table_image(
     tbl: etree._Element,
-    ex: ExhibitInput,
-    media_bytes_lookup,
+    capture: Capture,
+    preset: Preset,
+    media_lookup,
 ) -> None:
-    """Apply image XML surgery + caption rewrite in place on a cloned <w:tbl>."""
-    media_path = ex.capture.image_media_path
-    png_bytes = media_bytes_lookup(media_path) if media_path else None
+    """Apply crop + resize XML to a cloned capture table."""
+    media_path = capture.image_media_path
+    png_bytes = media_lookup(media_path) if media_path else None
     if png_bytes:
         orig_w, orig_h = _image_dims(png_bytes)
     else:
@@ -272,13 +282,80 @@ def _modify_table_for_exhibit(
 
     current_cx, current_cy = _read_extent(tbl)
     cx, cy, src_rect = calculate_display_dims(
-        orig_w, orig_h, ex.preset.crop, ex.preset.size,
+        orig_w, orig_h, preset.crop, preset.size,
         current_cx_emu=current_cx, current_cy_emu=current_cy,
     )
     _set_image_xml(tbl, cx, cy, src_rect)
 
+
+def _modify_table_for_exhibit(
+    tbl: etree._Element,
+    ex: ExhibitInput,
+    media_bytes_lookup,
+) -> None:
+    """Apply image XML surgery + caption rewrite in place on a cloned <w:tbl>."""
+    _resize_table_image(tbl, ex.capture, ex.preset, media_bytes_lookup)
     _tidy_url_row(tbl)
     _swap_updated_date(tbl, _format_post_date(ex))
+
+
+def _modify_table_for_locator(
+    tbl: etree._Element,
+    capture: Capture,
+    preset: Preset,
+    media_bytes_lookup,
+) -> None:
+    """
+    Apply the exhibit treatment to a main-account capture, MINUS the post-date
+    swap (profile/landing pages have no single post date — leave Row 10 alone).
+    """
+    _resize_table_image(tbl, capture, preset, media_bytes_lookup)
+    _tidy_url_row(tbl)
+
+
+def _write_docx_with_body(parsed: ParsedDocx, body_elements: list[etree._Element], output_path: Path) -> None:
+    """Clone the source zip, replace word/document.xml with a body built from `body_elements`."""
+    tree = etree.fromstring(parsed.doc_xml)
+    body = tree.find(f"{{{W_NS}}}body")
+    if body is None:
+        raise ValueError("source docx has no <w:body>")
+
+    sect_pr = body.find(f"{{{W_NS}}}sectPr")
+    for child in list(body):
+        body.remove(child)
+    for el in body_elements:
+        body.append(el)
+    if sect_pr is not None:
+        body.append(sect_pr)
+
+    new_doc_xml = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(parsed.zip_bytes)) as zf:
+        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as out:
+            for item in zf.infolist():
+                if item.filename == "word/document.xml":
+                    out.writestr(item, new_doc_xml)
+                else:
+                    out.writestr(item, zf.read(item.filename))
+
+
+def _media_lookup_for(parsed: ParsedDocx):
+    """Build a cached media reader bound to the source zip."""
+    cache: dict[str, bytes] = {}
+    zf = zipfile.ZipFile(io.BytesIO(parsed.zip_bytes))
+
+    def _read(path: str) -> bytes | None:
+        if path in cache:
+            return cache[path]
+        try:
+            data = zf.read(path)
+        except KeyError:
+            return None
+        cache[path] = data
+        return data
+
+    return _read
 
 
 def write_platform_docx(
@@ -289,59 +366,64 @@ def write_platform_docx(
 ) -> None:
     """
     Build a new docx containing only `exhibits`, ordered by their list position
-    (caller already sorted by post date). Writes to `output_path`.
+    (caller already sorted by post date). One exhibit per page.
     """
     tree = etree.fromstring(parsed.doc_xml)
-    body = tree.find(f"{{{W_NS}}}body")
-    if body is None:
-        raise ValueError("source docx has no <w:body>")
+    src_tables = tree.find(f"{{{W_NS}}}body").findall(f"{{{W_NS}}}tbl")
+    media_lookup = _media_lookup_for(parsed)
 
-    all_tables = body.findall(f"{{{W_NS}}}tbl")
-    sect_pr = body.find(f"{{{W_NS}}}sectPr")
+    elements: list[etree._Element] = [_section_heading(f"{platform_display} Exhibits")]
+    for i, ex in enumerate(exhibits):
+        cloned = copy.deepcopy(src_tables[ex.capture.index])
+        _modify_table_for_exhibit(cloned, ex, media_lookup)
+        elements.append(cloned)
+        if i < len(exhibits) - 1:
+            elements.append(_make_page_break())
 
-    with zipfile.ZipFile(io.BytesIO(parsed.zip_bytes)) as zf:
-        media_cache: dict[str, bytes] = {}
+    _write_docx_with_body(parsed, elements, output_path)
 
-        def _read_media(path: str) -> bytes | None:
-            if path in media_cache:
-                return media_cache[path]
-            try:
-                data = zf.read(path)
-            except KeyError:
-                return None
-            media_cache[path] = data
-            return data
 
-        cloned_tables: list[etree._Element] = []
-        for ex in exhibits:
-            src_tbl = all_tables[ex.capture.index]
-            cloned = copy.deepcopy(src_tbl)
-            _modify_table_for_exhibit(cloned, ex, _read_media)
-            cloned_tables.append(cloned)
+def write_locator_docx(
+    parsed: ParsedDocx,
+    sections: list[tuple[str, list[tuple[Capture, Preset]]]],
+    output_path: Path,
+    doc_title: str,
+) -> None:
+    """
+    Build the Accounts Located doc using the same per-capture layout as a
+    platform exhibit doc — full Hunchly table (image + title + URL + hash +
+    dates), one capture per page — minus the post-date swap.
 
-        for child in list(body):
-            body.remove(child)
+    `sections` is a list of (platform_display, [(capture, preset), ...]).
+    Sections are emitted in list order, each with its own platform heading,
+    and every capture lives on its own page.
+    """
+    tree = etree.fromstring(parsed.doc_xml)
+    src_tables = tree.find(f"{{{W_NS}}}body").findall(f"{{{W_NS}}}tbl")
+    media_lookup = _media_lookup_for(parsed)
 
-        body.append(_section_heading(f"{platform_display} Exhibits"))
-        for tbl in cloned_tables:
-            body.append(tbl)
-            spacer = etree.Element(f"{{{W_NS}}}p")
-            body.append(spacer)
+    elements: list[etree._Element] = [_section_heading(doc_title)]
 
-        if sect_pr is not None:
-            body.append(sect_pr)
+    flat: list[tuple[str | None, Capture, Preset]] = []
+    for platform_display, items in sections:
+        if not items:
+            continue
+        first = True
+        for capture, preset in items:
+            flat.append((platform_display if first else None, capture, preset))
+            first = False
 
-        new_doc_xml = etree.tostring(
-            tree,
-            xml_declaration=True,
-            encoding="UTF-8",
-            standalone=True,
-        )
+    for i, (heading, capture, preset) in enumerate(flat):
+        if heading:
+            if i > 0:
+                elements.append(_make_page_break())
+            elements.append(_section_heading(heading))
+        cloned = copy.deepcopy(src_tables[capture.index])
+        _modify_table_for_locator(cloned, capture, preset, media_lookup)
+        elements.append(cloned)
+        is_last = i == len(flat) - 1
+        next_has_heading = (not is_last) and flat[i + 1][0] is not None
+        if not is_last and not next_has_heading:
+            elements.append(_make_page_break())
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as out:
-            for item in zf.infolist():
-                if item.filename == "word/document.xml":
-                    out.writestr(item, new_doc_xml)
-                else:
-                    out.writestr(item, zf.read(item.filename))
+    _write_docx_with_body(parsed, elements, output_path)

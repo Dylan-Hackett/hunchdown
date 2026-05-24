@@ -1,0 +1,20 @@
+{
+  "platform": "threads",
+  "post_style": "main_account",
+  "url_patterns": [
+    "threads\\.(?:com|net)/@[^/?#]+/?(?:$|[?#])"
+  ],
+  "crop": {
+    "left_pct": 19.53,
+    "top_pct": 8.3,
+    "right_pct": 38.6,
+    "bottom_pct": 44.33
+  },
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.108
+  },
+  "notes": "Threads profile/landing page crop, derived from manually-cropped reference in Word.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-05-24"
+}

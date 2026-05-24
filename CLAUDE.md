@@ -5,7 +5,7 @@
 Take a Hunchly-exported `.docx` file and transform it into a set of polished, structured deliverables:
 
 - **Per-platform exhibit documents** (`.docx` + `.pdf`) with captures organized by platform, sorted by real post date, cropped and resized per your style guides
-- **A master Account Locator document** indexing each subject's main account per platform
+- **A master Accounts Located document** indexing each subject's main account per platform
 - **Replaced caption metadata**: Hunchly's "Updated date" (which is just the capture date) gets swapped out for the actual post date, extracted deterministically from the URL where possible
 
 Chain of custody and reproducibility are non-negotiable.
@@ -20,7 +20,7 @@ Chain of custody and reproducibility are non-negotiable.
 - **Dev environment:** Mac (development), Windows (production deployment via PyInstaller .exe)
 - **Test data already uploaded:** `Test_Export.docx` (5 captures across Threads, X, TikTok, Instagram, Facebook)
 - **One subject per case** (no need to split docs by subject)
-- **Hunchly capture workflow:** Dylan navigates to each post's permalink before capturing. Every capture is a single-post page, never a feed/profile scroll capture (those are handled separately as "main account" captures for the Account Locator).
+- **Hunchly capture workflow:** Dylan navigates to each post's permalink before capturing. Every capture is a single-post page, never a feed/profile scroll capture (those are handled separately as "main account" captures for the Accounts Located).
 
 ---
 
@@ -414,8 +414,8 @@ Tkinter window: drag a Hunchly PNG, position a green rectangle to define keep-ar
 
 ```
 output/<case_name>_<YYYY-MM-DD>/
-├── 00_Account_Locator.docx          (master index, see below)
-├── 00_Account_Locator.pdf
+├── 00_Accounts_Located.docx          (master index, see below)
+├── 00_Accounts_Located.pdf
 ├── 01_Facebook_Exhibits.docx        (only if FB captures present)
 ├── 01_Facebook_Exhibits.pdf
 ├── 02_Instagram_Exhibits.docx
@@ -449,7 +449,7 @@ Post Date: 2024-03-15 18:42:11 UTC  |  Capture Date: 2026-05-23 15:44:49 -04:00
 Extraction Method: URL Snowflake decode (verified)
 ```
 
-### Account Locator doc
+### Accounts Located doc
 
 Listed in platform priority order (Facebook → Instagram → TikTok → X → LinkedIn → YouTube → Threads → Reddit → Other). Per subject per platform, the main account profile/landing page:
 - Platform name
@@ -509,7 +509,7 @@ Per-case audit trail:
    - Facebook-specific multi-method MHTML extractor (data-utime → GraphQL → article:published_time)
 5. **Preset loader** (`hrb/presets.py`): load JSON from `presets/`, match URL patterns. Ship with 1-2 starter presets per platform based on Dylan's style guides.
 6. **Docx writer** (`hrb/writer.py`): for each platform, clone source docx, keep only matching capture tables, modify image XML (srcRect + extents) per preset, rewrite Row 10 caption text with the appropriate method-and-confidence disclosure.
-7. **Account Locator builder** (`hrb/locator.py`): scan captures for main-account URLs, build a separate docx with the index.
+7. **Accounts Located builder** (`hrb/locator.py`): scan captures for main-account URLs, build a separate docx with the index.
 8. **PDF export** (`hrb/pdf_export.py`): use `docx2pdf` (Mac/Windows, requires Word installed).
 9. **CLI** (`hrb/__main__.py`): `python -m hrb --input Test_Export.docx --raw-zip case.zip --output ./output --case "test_case_1"`
 10. **manifest.json writer**: drop the audit trail at end of run.
@@ -552,7 +552,7 @@ Per-case audit trail:
 ## Open Items Dylan Will Provide
 
 - **Initial preset JSONs** built from internal style guides (one per common post style per platform). Dylan will define these as he encounters new post styles in real cases, using either the v0.2 interactive builder or by manually editing JSON with values from his style guide references.
-- **A larger test export** with main-account-page captures (he mentioned getting accounts per platform next) so we can test the Account Locator builder end-to-end.
+- **A larger test export** with main-account-page captures (he mentioned getting accounts per platform next) so we can test the Accounts Located builder end-to-end.
 - **Hunchly raw case .zip** (eventually) so we can build the Tier 2 MHTML extractor for Facebook + YouTube + Reddit dates.
 
 ---
