@@ -1,0 +1,133 @@
+{
+  "_meta": {
+    "description": "Fallback presets when no platform-specific preset matches a capture URL. Preserves Hunchly's original image extent. Replace with real per-style presets from your style guides as cases come in.",
+    "created_at": "2026-05-23",
+    "created_by": "Dylan Hackett"
+  },
+  "facebook": {
+    "platform": "facebook",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "instagram": {
+    "platform": "instagram",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "tiktok": {
+    "platform": "tiktok",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "x": {
+    "platform": "x",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "threads": {
+    "platform": "threads",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "linkedin": {
+    "platform": "linkedin",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "youtube": {
+    "platform": "youtube",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "reddit": {
+    "platform": "reddit",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  },
+  "other": {
+    "platform": "other",
+    "post_style": "_default",
+    "crop": {
+      "left_pct": 0.0,
+      "top_pct": 0.0,
+      "right_pct": 0.0,
+      "bottom_pct": 0.0
+    },
+    "size": {
+      "mode": "preserve"
+    },
+    "notes": "Fallback only \u2014 preserves Hunchly's original extent. Define real per-style presets per your guide for crops/resizes."
+  }
+}

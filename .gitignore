@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+
+# OS
+.DS_Store
+
+# Test data (not committed)
+Test*.docx
+Test*.zip
+
+# Output
+output/
+/tmp_output/
+
+# Pytest
+.pytest_cache/

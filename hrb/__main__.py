@@ -1,0 +1,283 @@
+"""
+Hunchly Report Builder CLI.
+
+Usage:
+    python -m hrb --input "Test Export.docx" --raw-zip Test.zip \\
+                  --output ./output --case smith_v_jones
+
+Outputs:
+    output/<case>_<date>/
+        00_Account_Locator.docx
+        01_Facebook_Exhibits.docx
+        02_Instagram_Exhibits.docx
+        ...
+        REVIEW_REQUIRED.docx        (only if any captures failed date extraction)
+        NEW_PRESETS_NEEDED.json     (only if any URL had no specific preset match)
+        manifest.json
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .dates import DateResult, extract as extract_date
+from .locator import build_account_locator
+from .parser import parse_docx, Capture, ParsedDocx
+from .pdf_export import ConverterUnavailable, export as export_pdfs
+from .platforms import (
+    PLATFORM_DISPLAY_NAMES,
+    PLATFORM_ORDER,
+    classify,
+    is_main_account_url,
+)
+from .presets import Preset, PresetLibrary
+from .raw_export import RawExport
+from .writer import ExhibitInput, write_platform_docx
+
+
+PLATFORM_FILE_ORDER = {p: i + 1 for i, p in enumerate(PLATFORM_ORDER)}
+
+
+def _platform_filename(platform: str, suffix: str = "docx") -> str:
+    n = PLATFORM_FILE_ORDER[platform]
+    name = PLATFORM_DISPLAY_NAMES[platform]
+    return f"{n:02d}_{name}_Exhibits.{suffix}"
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    h.update(path.read_bytes())
+    return h.hexdigest()
+
+
+def _process_captures(
+    parsed: ParsedDocx,
+    raw: RawExport | None,
+) -> tuple[
+    dict[str, list[tuple[Capture, DateResult]]],   # platform -> post captures with dates
+    list[Capture],                                  # main-account captures
+    list[tuple[Capture, DateResult]],               # review queue
+]:
+    """Classify, extract dates, partition into platform / locator / review buckets."""
+    posts_by_platform: dict[str, list[tuple[Capture, DateResult]]] = {}
+    main_accounts: list[Capture] = []
+    review_queue: list[tuple[Capture, DateResult]] = []
+
+    for c in parsed.captures:
+        platform = classify(c.url)
+
+        if is_main_account_url(c.url, platform):
+            main_accounts.append(c)
+            continue
+
+        mhtml_bytes = None
+        if raw is not None and c.sha256:
+            mhtml_bytes = raw.read_mhtml(c.sha256)
+
+        year_match = re.search(r"\b(20\d{2})\b", c.capture_date_raw)
+        reference_year = int(year_match.group(1)) if year_match else None
+
+        dr = extract_date(
+            url=c.url,
+            platform=platform,
+            mhtml_bytes=mhtml_bytes,
+            post_body_hint=c.page_title or None,
+            reference_year=reference_year,
+        )
+
+        if dr.post_date is None:
+            review_queue.append((c, dr))
+        else:
+            posts_by_platform.setdefault(platform, []).append((c, dr))
+
+    return posts_by_platform, main_accounts, review_queue
+
+
+def _build_review_doc(
+    parsed: ParsedDocx,
+    review_queue: list[tuple[Capture, DateResult]],
+    presets: PresetLibrary,
+    output_path: Path,
+) -> None:
+    """Build REVIEW_REQUIRED.docx using the same table-clone path as exhibits."""
+    if not review_queue:
+        return
+
+    placeholder_dt = datetime(1900, 1, 1, tzinfo=timezone.utc)
+    exhibits: list[ExhibitInput] = []
+    for i, (c, dr) in enumerate(review_queue, start=1):
+        platform = classify(c.url)
+        preset, _ = presets.match(c.url, platform)
+        review_dr = DateResult(
+            post_date=placeholder_dt,
+            source="REVIEW_REQUIRED",
+            confidence="needs_manual_entry",
+            notes=dr.notes or "automatic date extraction failed",
+        )
+        exhibits.append(ExhibitInput(
+            capture=c,
+            date_result=review_dr,
+            preset=preset,
+            exhibit_number=i,
+        ))
+
+    write_platform_docx(parsed, "REVIEW REQUIRED — Manual Date Entry", exhibits, output_path)
+
+
+def run(
+    input_docx: Path,
+    raw_zip: Path | None,
+    output_root: Path,
+    case_name: str,
+    presets_dir: Path,
+    no_pdf: bool = False,
+) -> Path:
+    parsed = parse_docx(input_docx)
+    presets = PresetLibrary(presets_dir)
+
+    raw_ctx = RawExport(raw_zip) if raw_zip else None
+    try:
+        posts_by_platform, main_accounts, review_queue = _process_captures(parsed, raw_ctx)
+    finally:
+        if raw_ctx is not None:
+            raw_ctx.close()
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    case_dir = output_root / f"{case_name}_{date_str}"
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    docx_outputs: list[Path] = []
+    manifest_exhibits: list[dict] = []
+    platform_exhibit_counts: dict[str, int] = {}
+    platform_exhibit_filenames: dict[str, str] = {}
+
+    for platform in PLATFORM_ORDER:
+        items = posts_by_platform.get(platform, [])
+        if not items:
+            continue
+
+        items_sorted = sorted(items, key=lambda x: x[1].post_date)
+        exhibits: list[ExhibitInput] = []
+        for i, (c, dr) in enumerate(items_sorted, start=1):
+            preset, _ = presets.match(c.url, platform)
+            exhibits.append(ExhibitInput(
+                capture=c,
+                date_result=dr,
+                preset=preset,
+                exhibit_number=i,
+            ))
+
+        fname = _platform_filename(platform, "docx")
+        out_path = case_dir / fname
+        write_platform_docx(parsed, PLATFORM_DISPLAY_NAMES[platform], exhibits, out_path)
+        docx_outputs.append(out_path)
+
+        platform_exhibit_counts[platform] = len(exhibits)
+        platform_exhibit_filenames[platform] = _platform_filename(platform, "pdf")
+
+        for ex in exhibits:
+            manifest_exhibits.append({
+                "platform": platform,
+                "exhibit_number": ex.exhibit_number,
+                "url": ex.capture.url,
+                "page_title": ex.capture.page_title,
+                "post_date": ex.date_result.post_date.isoformat(),
+                "post_date_source": ex.date_result.source,
+                "post_date_confidence": ex.date_result.confidence,
+                "capture_date_raw": ex.capture.capture_date_raw,
+                "sha256": ex.capture.sha256,
+                "preset_used": ex.preset.source_path,
+                "preset_post_style": ex.preset.post_style,
+            })
+
+    locator_path = case_dir / "00_Account_Locator.docx"
+    locator_entries = build_account_locator(
+        main_account_captures=main_accounts,
+        platform_exhibit_counts=platform_exhibit_counts,
+        platform_exhibit_filenames=platform_exhibit_filenames,
+        output_path=locator_path,
+        case_name=case_name,
+    )
+    docx_outputs.insert(0, locator_path)
+
+    review_path = case_dir / "REVIEW_REQUIRED.docx"
+    if review_queue:
+        _build_review_doc(parsed, review_queue, presets, review_path)
+        docx_outputs.append(review_path)
+
+    if presets.unmatched:
+        (case_dir / "NEW_PRESETS_NEEDED.json").write_text(
+            json.dumps(presets.unmatched, indent=2)
+        )
+
+    pdf_status = "skipped"
+    if not no_pdf:
+        try:
+            export_pdfs(docx_outputs)
+            pdf_status = "ok"
+        except ConverterUnavailable as e:
+            pdf_status = f"unavailable: {e}"
+
+    manifest = {
+        "case_name": case_name,
+        "processed_at": datetime.now().astimezone().isoformat(),
+        "source_docx": str(input_docx),
+        "source_docx_sha256": _sha256_file(input_docx),
+        "raw_zip": str(raw_zip) if raw_zip else None,
+        "raw_zip_sha256": _sha256_file(raw_zip) if raw_zip else None,
+        "captures_processed": len(parsed.captures),
+        "exhibits_built": len(manifest_exhibits),
+        "main_accounts_indexed": len(locator_entries),
+        "review_required": len(review_queue),
+        "platforms_found": sorted(posts_by_platform.keys()),
+        "pdf_export_status": pdf_status,
+        "exhibits": manifest_exhibits,
+        "main_accounts": [asdict(e) for e in locator_entries],
+        "review_queue": [
+            {
+                "url": c.url,
+                "page_title": c.page_title,
+                "sha256": c.sha256,
+                "capture_date_raw": c.capture_date_raw,
+                "failure_notes": dr.notes,
+            }
+            for c, dr in review_queue
+        ],
+        "unmatched_url_presets": presets.unmatched,
+    }
+
+    (case_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    return case_dir
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="hrb", description="Hunchly Report Builder")
+    p.add_argument("--input", required=True, type=Path, help="Hunchly-exported .docx")
+    p.add_argument("--raw-zip", type=Path, default=None, help="Hunchly raw case .zip (for Tier 2 MHTML date extraction)")
+    p.add_argument("--output", type=Path, default=Path("./output"), help="Output root directory")
+    p.add_argument("--case", required=True, help="Case name (used in output folder + locator title)")
+    p.add_argument("--presets", type=Path, default=Path("./presets"), help="Presets directory")
+    p.add_argument("--no-pdf", action="store_true", help="Skip PDF export (docx only)")
+
+    args = p.parse_args(argv)
+
+    case_dir = run(
+        input_docx=args.input,
+        raw_zip=args.raw_zip,
+        output_root=args.output,
+        case_name=args.case,
+        presets_dir=args.presets,
+        no_pdf=args.no_pdf,
+    )
+    print(f"Done. Output: {case_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
