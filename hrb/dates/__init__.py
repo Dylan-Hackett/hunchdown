@@ -33,7 +33,8 @@ class DateResult:
 # ---------- Tier 1: URL decoders ----------
 
 def decode_tiktok(url: str) -> datetime | None:
-    m = re.search(r"/video/(\d+)", url)
+    # Video and photo (slideshow) posts share the same Snowflake ID scheme.
+    m = re.search(r"/(?:video|photo)/(\d+)", url)
     if not m:
         return None
     return datetime.fromtimestamp(int(m.group(1)) >> 32, tz=timezone.utc)
