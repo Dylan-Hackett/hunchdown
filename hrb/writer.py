@@ -275,26 +275,20 @@ def _parse_capture_tz(capture_date_raw: str):
 
 def _format_post_date(ex: ExhibitInput) -> str:
     """
-    Render the post date for Row 10 in the SAME timezone as the capture date,
-    so the two read consistently side by side. Mirrors Hunchly's format:
-    'YYYY-MM-DD HH:MM:SS AM/PM GMT ±HH:MM'.
+    Render the post date for Row 10 as the calendar day only (YYYY-MM-DD).
 
-    Falls back to UTC display if the capture date has no parseable offset, or
-    to a bare timestamp if the post date is timezone-naive.
+    The post date is still resolved in the SAME timezone as the capture date
+    before the time is dropped, because the local-day can differ from the UTC
+    day (e.g. 03:06 UTC on the 18th is 23:06 on the 17th at GMT -04:00).
+    Timezone-naive post dates (e.g. the Facebook unscrambler) are shown as-is.
     """
     dt = ex.date_result.post_date
     if dt.tzinfo is None:
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return dt.strftime("%Y-%m-%d")
 
     tz = _parse_capture_tz(ex.capture.capture_date_raw)
-    if tz is not None:
-        local = dt.astimezone(tz)
-        meridiem = "AM" if local.hour < 12 else "PM"
-        off = local.strftime("%z")            # e.g. -0400
-        off = f"{off[:3]}:{off[3:]}"          # -> -04:00
-        return f"{local.strftime('%Y-%m-%d %H:%M:%S')} {meridiem} GMT {off}"
-
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    local = dt.astimezone(tz) if tz is not None else dt.astimezone(timezone.utc)
+    return local.strftime("%Y-%m-%d")
 
 
 def _section_heading(text: str) -> etree._Element:
