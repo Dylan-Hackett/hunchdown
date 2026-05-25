@@ -226,11 +226,30 @@ def _tidy_url_row(tbl: etree._Element) -> None:
             t.text = t.text.strip()
 
 
+def _relabel_updated_date(tbl: etree._Element) -> None:
+    """
+    Row 9 holds the labels 'Capture date: \\t...\\t Updated date:'. Hunchly's
+    'Updated date' is really the capture time; we substitute the real post date
+    in Row 10, so the label must read 'Post date:' to match. Replace the label
+    text in place, preserving tab alignment.
+    """
+    rows = tbl.findall(f"{{{W_NS}}}tr")
+    if len(rows) < 9:
+        return
+    cell = _content_cell(rows[8])
+    if cell is None:
+        return
+    for t in cell.findall(f".//{{{W_NS}}}t"):
+        if t.text and "updated date" in t.text.lower():
+            t.text = _re.sub(r"(?i)updated date", "Post date", t.text)
+
+
 def _swap_updated_date(tbl: etree._Element, post_date_str: str) -> None:
     """
     Replace the 'Updated date' value in Row 10 with the post date, preserving
     the cell/paragraph/run structure and the tab alignment exactly as Hunchly
-    laid it out. Capture-date side is untouched.
+    laid it out. Capture-date side is untouched. Also relabels the Row 9 header
+    from 'Updated date:' to 'Post date:'.
     """
     rows = tbl.findall(f"{{{W_NS}}}tr")
     if len(rows) < 10:
@@ -239,6 +258,7 @@ def _swap_updated_date(tbl: etree._Element, post_date_str: str) -> None:
     if cell is None:
         return
     _replace_after_last_tab(cell, post_date_str)
+    _relabel_updated_date(tbl)
 
 
 def _format_post_date(ex: ExhibitInput) -> str:
