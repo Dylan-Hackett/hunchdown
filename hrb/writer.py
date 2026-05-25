@@ -20,7 +20,7 @@ import shutil
 import struct
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from lxml import etree
@@ -261,15 +261,40 @@ def _swap_updated_date(tbl: etree._Element, post_date_str: str) -> None:
     _relabel_updated_date(tbl)
 
 
+def _parse_capture_tz(capture_date_raw: str):
+    """
+    Pull the UTC offset out of Hunchly's capture-date string, e.g.
+    '2026-05-23 18:01:16 PM GMT -04:00' -> timezone(-4h). Returns None if absent.
+    """
+    m = _re.search(r"([+-])(\d{2}):?(\d{2})\s*$", capture_date_raw.strip())
+    if not m:
+        return None
+    sign = 1 if m.group(1) == "+" else -1
+    return timezone(sign * timedelta(hours=int(m.group(2)), minutes=int(m.group(3))))
+
+
 def _format_post_date(ex: ExhibitInput) -> str:
     """
-    Render the post date for Row 10. Matches Hunchly's date layout style so
-    it sits cleanly next to the capture date.
+    Render the post date for Row 10 in the SAME timezone as the capture date,
+    so the two read consistently side by side. Mirrors Hunchly's format:
+    'YYYY-MM-DD HH:MM:SS AM/PM GMT ±HH:MM'.
+
+    Falls back to UTC display if the capture date has no parseable offset, or
+    to a bare timestamp if the post date is timezone-naive.
     """
     dt = ex.date_result.post_date
-    if dt.tzinfo:
-        return dt.strftime("%Y-%m-%d %H:%M:%S UTC") if dt.utcoffset().total_seconds() == 0 else dt.strftime("%Y-%m-%d %H:%M:%S %z")
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    if dt.tzinfo is None:
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    tz = _parse_capture_tz(ex.capture.capture_date_raw)
+    if tz is not None:
+        local = dt.astimezone(tz)
+        meridiem = "AM" if local.hour < 12 else "PM"
+        off = local.strftime("%z")            # e.g. -0400
+        off = f"{off[:3]}:{off[3:]}"          # -> -04:00
+        return f"{local.strftime('%Y-%m-%d %H:%M:%S')} {meridiem} GMT {off}"
+
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _section_heading(text: str) -> etree._Element:
