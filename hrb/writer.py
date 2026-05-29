@@ -338,6 +338,38 @@ def _modify_table_for_exhibit(
     _swap_updated_date(tbl, _format_post_date(ex))
 
 
+def _strip_after_first_tab(cell: etree._Element) -> bool:
+    """
+    Truncate the cell's content at the first tab character, dropping everything
+    after. Used in the Accounts Located doc to strip the second column from
+    Hunchly's two-column rows (Capture date \t Post date, etc.), leaving only
+    the capture-date side. Handles both inline `\\t` chars in <w:t> text and
+    the separate <w:tab/> element representation.
+    """
+    found = False
+    for t in cell.iter(f"{{{W_NS}}}t"):
+        if found:
+            t.text = ""
+        elif t.text and "\t" in t.text:
+            t.text = t.text.split("\t", 1)[0]
+            found = True
+    for tab in list(cell.iter(f"{{{W_NS}}}tab")):
+        parent = tab.getparent()
+        if parent is not None:
+            parent.remove(tab)
+            found = True
+    return found
+
+
+def _remove_table_rows(tbl: etree._Element, indices: list[int]) -> None:
+    """Remove rows at the given 0-based indices. Iterates in reverse to keep
+    earlier indices valid as we delete."""
+    rows = tbl.findall(f"{{{W_NS}}}tr")
+    for i in sorted(set(indices), reverse=True):
+        if 0 <= i < len(rows):
+            tbl.remove(rows[i])
+
+
 def _modify_table_for_locator(
     tbl: etree._Element,
     capture: Capture,
@@ -346,10 +378,27 @@ def _modify_table_for_locator(
 ) -> None:
     """
     Apply the exhibit treatment to a main-account capture, MINUS the post-date
-    swap (profile/landing pages have no single post date — leave Row 10 alone).
+    swap (profile/landing pages have no single post date). Also drops the
+    Page Title rows entirely and strips the "Post date" column from the
+    capture-date rows — profile pages don't have a single post date and
+    Hunchly's page title isn't useful here.
+
+    Resulting layout: image, URL, hash, capture date. Nothing else.
     """
     _resize_table_image(tbl, capture, preset, media_bytes_lookup)
     _tidy_url_row(tbl)
+
+    # Strip the post-date column from Row 9 (label) and Row 10 (value).
+    # These are 0-indexed positions 8 and 9 in the original Hunchly layout.
+    rows = tbl.findall(f"{{{W_NS}}}tr")
+    for idx in (8, 9):
+        if idx < len(rows):
+            cell = _content_cell(rows[idx])
+            if cell is not None:
+                _strip_after_first_tab(cell)
+
+    # Drop the Page Title rows (Row 3 label + Row 4 value = indices 2, 3).
+    _remove_table_rows(tbl, [2, 3])
 
 
 def _write_docx_with_body(parsed: ParsedDocx, body_elements: list[etree._Element], output_path: Path) -> None:

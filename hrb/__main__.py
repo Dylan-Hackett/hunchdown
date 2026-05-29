@@ -7,12 +7,12 @@ Usage:
 
 Outputs:
     output/<case>_<date>/
-        00_Accounts_Located.docx
-        01_Facebook_Exhibits.docx
-        02_Instagram_Exhibits.docx
+        Accounts Located.docx
+        Facebook.docx
+        Instagram.docx
         ...
-        REVIEW_REQUIRED.docx        (only if any captures failed date extraction)
-        NEW_PRESETS_NEEDED.json     (only if any URL had no specific preset match)
+        Review Required.docx        (only if any captures failed date extraction)
+        New Presets Needed.json     (only if any URL had no specific preset match)
         manifest.json
 """
 from __future__ import annotations
@@ -40,13 +40,8 @@ from .raw_export import RawExport
 from .writer import ExhibitInput, write_locator_docx, write_platform_docx
 
 
-PLATFORM_FILE_ORDER = {p: i + 1 for i, p in enumerate(PLATFORM_ORDER)}
-
-
 def _platform_filename(platform: str, suffix: str = "docx") -> str:
-    n = PLATFORM_FILE_ORDER[platform]
-    name = PLATFORM_DISPLAY_NAMES[platform]
-    return f"{n:02d}_{name}_Exhibits.{suffix}"
+    return f"{PLATFORM_DISPLAY_NAMES[platform]}.{suffix}"
 
 
 def _sha256_file(path: Path) -> str:
@@ -76,8 +71,10 @@ def _process_captures(
             continue
 
         mhtml_bytes = None
+        note_text = None
         if raw is not None and c.sha256:
             mhtml_bytes = raw.read_mhtml(c.sha256)
+            note_text = raw.get_note(c.sha256)
 
         year_match = re.search(r"\b(20\d{2})\b", c.capture_date_raw)
         reference_year = int(year_match.group(1)) if year_match else None
@@ -86,6 +83,7 @@ def _process_captures(
             url=c.url,
             platform=platform,
             mhtml_bytes=mhtml_bytes,
+            note_text=note_text,
             post_body_hint=c.page_title or None,
             reference_year=reference_year,
         )
@@ -195,7 +193,7 @@ def run(
                 "preset_post_style": ex.preset.post_style,
             })
 
-    locator_path = case_dir / "00_Accounts_Located.docx"
+    locator_path = case_dir / "Accounts Located.docx"
     by_platform_accounts: dict[str, list[Capture]] = {}
     for c in main_accounts:
         by_platform_accounts.setdefault(classify(c.url), []).append(c)
@@ -233,13 +231,13 @@ def run(
         )
         docx_outputs.insert(0, locator_path)
 
-    review_path = case_dir / "REVIEW_REQUIRED.docx"
+    review_path = case_dir / "Review Required.docx"
     if review_queue:
         _build_review_doc(parsed, review_queue, presets, review_path)
         docx_outputs.append(review_path)
 
     if presets.unmatched:
-        (case_dir / "NEW_PRESETS_NEEDED.json").write_text(
+        (case_dir / "New Presets Needed.json").write_text(
             json.dumps(presets.unmatched, indent=2)
         )
 

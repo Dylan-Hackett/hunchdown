@@ -1,5 +1,6 @@
 """
-Post-date extraction. Three-tier cascade:
+Post-date extraction. Four-tier cascade (highest authority first):
+    0. Analyst note ("Post Date: ..." in the Hunchly capture's Note field).
     1. URL Snowflake / shortcode decode (deterministic, no DOM needed).
     2. MHTML parse from the raw case zip (generic + FB unscramble).
     3. REVIEW_REQUIRED — return None so the caller can route the capture.
@@ -12,6 +13,8 @@ import base64
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+from dateutil import parser as date_parser
 
 from . import facebook as fb_dates
 from . import mhtml_universal
@@ -28,6 +31,45 @@ class DateResult:
     source: str                       # e.g. "url_snowflake_x", "mhtml_time_element"
     confidence: str                   # "authoritative" | "cross_validated" | "single" | "failed"
     notes: str = ""
+
+
+# ---------- Tier 0: analyst note ----------
+
+# Match an explicit prefix so we don't grab dates the analyst mentioned in
+# passing ("got arrested 3/15/22"). The date follows after the colon and
+# runs to end-of-line.
+_NOTE_DATE_RE = re.compile(
+    r"(?:post[\s_-]*date|date)\s*[:\-]\s*([^\n\r]+)",
+    re.IGNORECASE,
+)
+
+
+def try_note(note_text: str | None) -> DateResult | None:
+    """
+    Tier 0. Looks for `Post Date: ...` or `Date: ...` in the analyst's
+    Hunchly note and parses the date that follows. Wins over all other
+    tiers — analyst wrote it on purpose, that's the source of truth.
+    """
+    if not note_text:
+        return None
+    m = _NOTE_DATE_RE.search(note_text)
+    if not m:
+        return None
+    raw = m.group(1).strip().rstrip(".;,")
+    if not raw:
+        return None
+    try:
+        dt = date_parser.parse(raw, fuzzy=True)
+    except (ValueError, OverflowError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return DateResult(
+        dt,
+        "analyst_note",
+        "authoritative",
+        notes=f"manually entered in Hunchly note: {raw!r}",
+    )
 
 
 # ---------- Tier 1: URL decoders ----------
@@ -104,6 +146,7 @@ def try_url(url: str, platform: str) -> DateResult | None:
 def try_mhtml(
     mhtml_bytes: bytes,
     platform: str,
+    url: str | None = None,
     post_body_hint: str | None = None,
     reference_year: int | None = None,
 ) -> DateResult | None:
@@ -112,7 +155,12 @@ def try_mhtml(
         return None
 
     if platform == "facebook":
-        r = fb_dates.extract_from_bytes(mhtml_bytes, post_body_hint=post_body_hint, reference_year=reference_year)
+        r = fb_dates.extract_from_bytes(
+            mhtml_bytes,
+            post_url=url,
+            post_body_hint=post_body_hint,
+            reference_year=reference_year,
+        )
         if not r.post_date:
             return None
         return DateResult(
@@ -134,19 +182,35 @@ def extract(
     url: str,
     platform: str,
     mhtml_bytes: bytes | None = None,
+    note_text: str | None = None,
     post_body_hint: str | None = None,
     reference_year: int | None = None,
 ) -> DateResult:
     """
-    Run the full cascade. Always returns a DateResult; post_date is None on total failure
-    (caller routes that capture to REVIEW_REQUIRED).
+    Run the full cascade. Always returns a DateResult; post_date is None on
+    total failure (caller routes that capture to REVIEW_REQUIRED).
+
+    Order:
+        Tier 0: analyst note (most authoritative)
+        Tier 1: URL Snowflake/shortcode decode
+        Tier 2: MHTML parse (universal or FB unscrambler)
     """
+    r = try_note(note_text)
+    if r:
+        return r
+
     r = try_url(url, platform)
     if r:
         return r
 
     if mhtml_bytes:
-        r = try_mhtml(mhtml_bytes, platform, post_body_hint=post_body_hint, reference_year=reference_year)
+        r = try_mhtml(
+            mhtml_bytes,
+            platform,
+            url=url,
+            post_body_hint=post_body_hint,
+            reference_year=reference_year,
+        )
         if r:
             return r
 

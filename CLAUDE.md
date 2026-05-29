@@ -21,6 +21,14 @@ Chain of custody and reproducibility are non-negotiable.
 - **Test data already uploaded:** `Test_Export.docx` (5 captures across Threads, X, TikTok, Instagram, Facebook)
 - **One subject per case** (no need to split docs by subject)
 - **Hunchly capture workflow:** Dylan navigates to each post's permalink before capturing. Every capture is a single-post page, never a feed/profile scroll capture (those are handled separately as "main account" captures for the Accounts Located).
+- **Facebook reels:** capture them in "open as regular post" mode, NOT the native reel player. The native reel surface hides the date (not visible in the UI, and the scrambled-span unscrambler only recovers visibly-rendered text). Opened-as-post, the reel renders a standard post DOM with a visible date, so it flows through the same verified FB unscrambler path as a feed post.
+- **Date extraction coverage by post type (validated):**
+  - TikTok video + photo/slideshow → URL Snowflake (`id >> 32`), deterministic
+  - Instagram post + reel + tv → URL shortcode (Meta media-ID), deterministic
+  - X tweet (text/photo/video, all `/status/`) → URL Snowflake, deterministic
+  - Threads post → URL shortcode, deterministic
+  - Facebook feed post + reel-as-post → MHTML unscrambler (only path that depends on a visibly-rendered date)
+  - YouTube → MHTML universal extractor (untested against real Hunchly MHTML)
 
 ---
 
