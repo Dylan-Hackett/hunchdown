@@ -2,8 +2,9 @@
   "platform": "instagram",
   "post_style": "main_account",
   "url_patterns": [
-    "instagram\\.com/[^/?#]+/?(?:$|[?#])"
+    "instagram\\.com/[A-Za-z0-9._]+/?$"
   ],
+  "components": ["profile"],
   "crop": {
     "left_pct": 25.14,
     "top_pct": 4.62,
@@ -14,7 +15,7 @@
     "mode": "fixed_width",
     "width_inches": 6.073
   },
-  "notes": "Instagram profile/landing page crop, derived from manually-cropped reference in Word.",
+  "notes": "Per-capture CV crops to just below the Follow/Message action button row with equal margins. Static crop above is fallback.",
   "created_by": "Dylan Hackett",
-  "created_at": "2026-05-24"
+  "created_at": "2026-05-30"
 }

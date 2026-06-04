@@ -1,0 +1,6 @@
+{
+  "comment": "Per-platform crop tuning for IG profile pages. Edit via tools/tune_crop.py or by hand.",
+  "top_margin_above_avatar_pct": 2.4,
+  "bottom_margin_below_buttons_pct": 2.4,
+  "side_margin_around_buttons_pct": 1.35
+}

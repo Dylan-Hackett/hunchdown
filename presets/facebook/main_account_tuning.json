@@ -1,0 +1,6 @@
+{
+  "comment": "Per-platform crop tuning for FB profile pages. Edit via tools/tune_crop.py or by hand.",
+  "top_margin_above_avatar_pct": 1.5,
+  "bottom_margin_below_intro_pct": 1.5,
+  "side_margin_around_panel_pct": 1.5
+}

@@ -30,6 +30,10 @@ class Preset:
     crop: dict                       # {left_pct, top_pct, right_pct, bottom_pct}
     size: dict                       # {mode, ...}
     url_patterns: list[re.Pattern] = field(default_factory=list)
+    # When set, writer asks hrb.vision to detect these components per-capture
+    # and unions their bboxes into a crop. If detection fails, falls back to
+    # the static `crop` field above.
+    components: list[str] | None = None
     source_path: str = ""
     raw: dict = field(default_factory=dict)
 
@@ -68,12 +72,16 @@ class PresetLibrary:
         crop = data.get("crop") or {"left_pct": 0, "top_pct": 0, "right_pct": 0, "bottom_pct": 0}
         size = data.get("size") or {"mode": "fixed_width", "width_inches": 5.5}
         patterns = [re.compile(p, re.I) for p in (data.get("url_patterns") or [])]
+        components = data.get("components")
+        if components is not None and not isinstance(components, list):
+            raise ValueError(f"{source}: `components` must be a list of strings")
         return Preset(
             platform=data.get("platform") or default_platform or "other",
             post_style=data.get("post_style", "_default"),
             crop=crop,
             size=size,
             url_patterns=patterns,
+            components=components,
             source_path=source,
             raw=data,
         )

@@ -172,13 +172,13 @@ def run(
 
         fname = _platform_filename(platform, "docx")
         out_path = case_dir / fname
-        write_platform_docx(parsed, PLATFORM_DISPLAY_NAMES[platform], exhibits, out_path)
+        decisions = write_platform_docx(parsed, PLATFORM_DISPLAY_NAMES[platform], exhibits, out_path)
         docx_outputs.append(out_path)
 
         platform_exhibit_counts[platform] = len(exhibits)
         platform_exhibit_filenames[platform] = _platform_filename(platform, "pdf")
 
-        for ex in exhibits:
+        for ex, decision in zip(exhibits, decisions):
             manifest_exhibits.append({
                 "platform": platform,
                 "exhibit_number": ex.exhibit_number,
@@ -191,6 +191,9 @@ def run(
                 "sha256": ex.capture.sha256,
                 "preset_used": ex.preset.source_path,
                 "preset_post_style": ex.preset.post_style,
+                "crop_source": decision["crop_source"],
+                "crop_pct": decision["crop_pct"],
+                "cv_components": decision["cv_components"],
             })
 
     locator_path = case_dir / "Accounts Located.docx"
@@ -223,12 +226,18 @@ def run(
         locator_sections.append((PLATFORM_DISPLAY_NAMES[platform], items))
 
     if locator_sections:
-        write_locator_docx(
+        locator_decisions = write_locator_docx(
             parsed,
             sections=locator_sections,
             output_path=locator_path,
             doc_title=f"Accounts Located — {case_name}",
         )
+        for entry in locator_entries:
+            d = locator_decisions.get(entry["sha256"])
+            if d:
+                entry["crop_source"] = d["crop_source"]
+                entry["crop_pct"] = d["crop_pct"]
+                entry["cv_components"] = d["cv_components"]
         docx_outputs.insert(0, locator_path)
 
     review_path = case_dir / "Review Required.docx"

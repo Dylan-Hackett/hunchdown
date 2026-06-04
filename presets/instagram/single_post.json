@@ -1,16 +1,16 @@
 {
   "platform": "instagram",
   "post_style": "single_post",
-  "url_patterns": ["instagram\\.com/p/[^/?#]+/?"],
+  "url_patterns": ["instagram\\.com/(p|reel|tv)/[^/?#]+"],
+  "components": ["post"],
   "crop": {
     "left_pct": 15.0,
     "top_pct": 10.0,
     "right_pct": 15.0,
     "bottom_pct": 8.0
   },
-  "size": { "mode": "preserve" },
-  "notes": "DEMO crop values to test the srcRect/extent pipeline. Replace with your real Instagram single-post crop values.",
-  "style_guide_ref": "DEMO-IG-001",
+  "size": { "mode": "fixed_width", "width_inches": 6.0 },
+  "notes": "Per-capture CV detects the post region (media + sidebar). Static crop above is fallback when CV fails.",
   "created_by": "Dylan Hackett",
-  "created_at": "2026-05-24"
+  "created_at": "2026-05-29"
 }

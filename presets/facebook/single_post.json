@@ -1,0 +1,22 @@
+{
+  "platform": "facebook",
+  "post_style": "single_post",
+  "url_patterns": [
+    "facebook\\.com/[^/]+/posts/pfbid",
+    "facebook\\.com/[^/]+/videos/\\d+",
+    "facebook\\.com/photo/\\?fbid=",
+    "facebook\\.com/permalink\\.php\\?",
+    "facebook\\.com/story\\.php\\?"
+  ],
+  "components": ["post_card"],
+  "crop": {
+    "left_pct": 25.0,
+    "top_pct": 12.0,
+    "right_pct": 25.0,
+    "bottom_pct": 5.0
+  },
+  "size": { "mode": "fixed_width", "width_inches": 6.0 },
+  "notes": "Per-capture CV detects the modal post card (white card on dimmed background). Static crop above is fallback for non-modal layouts (e.g. /watch/) where the detector returns None.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-05-29"
+}

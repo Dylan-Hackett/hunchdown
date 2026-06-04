@@ -28,6 +28,7 @@ from lxml import etree
 from .dates import DateResult
 from .parser import ParsedDocx, Capture
 from .presets import Preset, calculate_display_dims
+from . import vision
 
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -310,8 +311,15 @@ def _resize_table_image(
     capture: Capture,
     preset: Preset,
     media_lookup,
-) -> None:
-    """Apply crop + resize XML to a cloned capture table."""
+) -> dict:
+    """
+    Apply crop + resize XML to a cloned capture table.
+
+    Returns a dict describing how the crop was decided, for the manifest:
+        {"crop_source": "cv_detected" | "static_preset" | "no_image",
+         "crop_pct": {left_pct, top_pct, right_pct, bottom_pct},
+         "cv_components": {component_id: (left,top,right,bottom)} or None}
+    """
     media_path = capture.image_media_path
     png_bytes = media_lookup(media_path) if media_path else None
     if png_bytes:
@@ -319,23 +327,49 @@ def _resize_table_image(
     else:
         orig_w, orig_h = 3024, 1552
 
+    crop = preset.crop
+    crop_source = "static_preset"
+    cv_components: dict | None = None
+    if preset.components and png_bytes:
+        detected = vision.detect_components(
+            png_bytes,
+            preset.platform,
+            preset.post_style,
+            preset.components,
+        )
+        if detected:
+            union = vision.union_bboxes(list(detected.values()))
+            crop = vision.bbox_to_crop_pct(union, orig_w, orig_h)
+            crop_source = "cv_detected"
+            cv_components = {
+                k: (int(b.left), int(b.top), int(b.right), int(b.bottom))
+                for k, b in detected.items()
+            }
+
     current_cx, current_cy = _read_extent(tbl)
     cx, cy, src_rect = calculate_display_dims(
-        orig_w, orig_h, preset.crop, preset.size,
+        orig_w, orig_h, crop, preset.size,
         current_cx_emu=current_cx, current_cy_emu=current_cy,
     )
     _set_image_xml(tbl, cx, cy, src_rect)
+
+    return {
+        "crop_source": crop_source if png_bytes else "no_image",
+        "crop_pct": dict(crop),
+        "cv_components": cv_components,
+    }
 
 
 def _modify_table_for_exhibit(
     tbl: etree._Element,
     ex: ExhibitInput,
     media_bytes_lookup,
-) -> None:
-    """Apply image XML surgery + caption rewrite in place on a cloned <w:tbl>."""
-    _resize_table_image(tbl, ex.capture, ex.preset, media_bytes_lookup)
+) -> dict:
+    """Apply image XML surgery + caption rewrite in place. Returns the crop decision."""
+    decision = _resize_table_image(tbl, ex.capture, ex.preset, media_bytes_lookup)
     _tidy_url_row(tbl)
     _swap_updated_date(tbl, _format_post_date(ex))
+    return decision
 
 
 def _strip_after_first_tab(cell: etree._Element) -> bool:
@@ -375,7 +409,7 @@ def _modify_table_for_locator(
     capture: Capture,
     preset: Preset,
     media_bytes_lookup,
-) -> None:
+) -> dict:
     """
     Apply the exhibit treatment to a main-account capture, MINUS the post-date
     swap (profile/landing pages have no single post date). Also drops the
@@ -383,9 +417,11 @@ def _modify_table_for_locator(
     capture-date rows — profile pages don't have a single post date and
     Hunchly's page title isn't useful here.
 
+    Returns the crop decision so the caller can record it in the manifest.
+
     Resulting layout: image, URL, hash, capture date. Nothing else.
     """
-    _resize_table_image(tbl, capture, preset, media_bytes_lookup)
+    decision = _resize_table_image(tbl, capture, preset, media_bytes_lookup)
     _tidy_url_row(tbl)
 
     # Strip the post-date column from Row 9 (label) and Row 10 (value).
@@ -399,6 +435,7 @@ def _modify_table_for_locator(
 
     # Drop the Page Title rows (Row 3 label + Row 4 value = indices 2, 3).
     _remove_table_rows(tbl, [2, 3])
+    return decision
 
 
 def _write_docx_with_body(parsed: ParsedDocx, body_elements: list[etree._Element], output_path: Path) -> None:
@@ -451,24 +488,29 @@ def write_platform_docx(
     platform_display: str,
     exhibits: list[ExhibitInput],
     output_path: Path,
-) -> None:
+) -> list[dict]:
     """
     Build a new docx containing only `exhibits`, ordered by their list position
     (caller already sorted by post date). One exhibit per page.
+
+    Returns a list of crop-decision dicts parallel to `exhibits` so the caller
+    can record `crop_source` / `crop_pct` in the manifest.
     """
     tree = etree.fromstring(parsed.doc_xml)
     src_tables = tree.find(f"{{{W_NS}}}body").findall(f"{{{W_NS}}}tbl")
     media_lookup = _media_lookup_for(parsed)
 
     elements: list[etree._Element] = [_section_heading(f"{platform_display} Exhibits")]
+    decisions: list[dict] = []
     for i, ex in enumerate(exhibits):
         cloned = copy.deepcopy(src_tables[ex.capture.index])
-        _modify_table_for_exhibit(cloned, ex, media_lookup)
+        decisions.append(_modify_table_for_exhibit(cloned, ex, media_lookup))
         elements.append(cloned)
         if i < len(exhibits) - 1:
             elements.append(_make_page_break())
 
     _write_docx_with_body(parsed, elements, output_path)
+    return decisions
 
 
 def write_locator_docx(
@@ -476,7 +518,7 @@ def write_locator_docx(
     sections: list[tuple[str, list[tuple[Capture, Preset]]]],
     output_path: Path,
     doc_title: str,
-) -> None:
+) -> dict[str, dict]:
     """
     Build the Accounts Located doc using the same per-capture layout as a
     platform exhibit doc — full Hunchly table (image + title + URL + hash +
@@ -485,6 +527,9 @@ def write_locator_docx(
     `sections` is a list of (platform_display, [(capture, preset), ...]).
     Sections are emitted in list order, each with its own platform heading,
     and every capture lives on its own page.
+
+    Returns {capture.sha256: crop_decision} so the caller can annotate the
+    Accounts Located entries in the manifest with how the crop was decided.
     """
     tree = etree.fromstring(parsed.doc_xml)
     src_tables = tree.find(f"{{{W_NS}}}body").findall(f"{{{W_NS}}}tbl")
@@ -501,13 +546,14 @@ def write_locator_docx(
             flat.append((platform_display if first else None, capture, preset))
             first = False
 
+    decisions: dict[str, dict] = {}
     for i, (heading, capture, preset) in enumerate(flat):
         if heading:
             if i > 0:
                 elements.append(_make_page_break())
             elements.append(_section_heading(heading))
         cloned = copy.deepcopy(src_tables[capture.index])
-        _modify_table_for_locator(cloned, capture, preset, media_lookup)
+        decisions[capture.sha256] = _modify_table_for_locator(cloned, capture, preset, media_lookup)
         elements.append(cloned)
         is_last = i == len(flat) - 1
         next_has_heading = (not is_last) and flat[i + 1][0] is not None
@@ -515,3 +561,4 @@ def write_locator_docx(
             elements.append(_make_page_break())
 
     _write_docx_with_body(parsed, elements, output_path)
+    return decisions

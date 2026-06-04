@@ -13,6 +13,20 @@ wheels/
 # Test data (not committed)
 Test*.docx
 Test*.zip
+*export.docx
+*export.zip
+acclocate*.docx
+acclocate*.zip
+
+# Word lock files
+~$*.docx
+
+# Dev scratch
+fb_debug.py
+*_annotations.json
+
+# Claude Code local config
+.claude/
 
 # Output
 output/

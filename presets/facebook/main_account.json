@@ -2,8 +2,9 @@
   "platform": "facebook",
   "post_style": "main_account",
   "url_patterns": [
-    "facebook\\.com/[^/?#]+/?(?:$|[?#])"
+    "facebook\\.com/[A-Za-z0-9.\\-_]+/?$"
   ],
+  "components": ["profile"],
   "crop": {
     "left_pct": 13.12,
     "top_pct": 59.47,
@@ -14,7 +15,7 @@
     "mode": "fixed_width",
     "width_inches": 6.096
   },
-  "notes": "Facebook profile/landing page crop, derived from manually-cropped reference in Word.",
+  "notes": "Per-capture CV detects the profile content (down through the Intro card) with equal left/right/bottom margins. Static crop above is fallback.",
   "created_by": "Dylan Hackett",
-  "created_at": "2026-05-24"
+  "created_at": "2026-05-30"
 }
