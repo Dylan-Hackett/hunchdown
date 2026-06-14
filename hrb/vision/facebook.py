@@ -7,11 +7,20 @@ Two strategies, dispatched on `post_style`:
     floating over the dimmed feed (used for `/posts/pfbid…`, `/photo/?fbid=…`,
     `/videos/<id>` permalinks). See `_detect_modal_post`.
 
-  * `main_account` (profile pages): detect named landmarks (cover_photo,
-    avatar, tabs_row, lower_panel, intro_card) and compute the crop using
-    tunable margins loaded from main_account_tuning.json. The crop is
-    horizontally symmetric (Dylan's "equal sides" rule) and ends at the
-    bottom of the intro card when visible, else at the image bottom.
+  * `main_account` (profile pages): detect named landmarks (avatar,
+    content_column, intro_card) and compute the crop using tunable margins
+    loaded from main_account_tuning.json. The crop:
+      - top    = avatar.top − top margin (reaches up into the cover photo)
+      - bottom = intro card bottom + border (capture "from Personal details up")
+      - sides  = content column ± border, forced symmetric about the image
+                 center
+    The same `border` pixel value is applied to the left, right, and bottom
+    so the light-blue lower-panel background frames the content equally on
+    all three sides (Dylan's rule). `border` is `border_pct` × image width.
+    The content column is the union of the white cards in the lower gray
+    panel (intro card on the left through the composer/right card). When no
+    cards are visible the column is derived by mirroring the avatar's left
+    edge about the image center.
 
 Either path returns None on failure → caller falls back to the preset's
 static crop %.
@@ -35,9 +44,10 @@ def _load_tuning() -> dict:
         return json.loads(_TUNING_PATH.read_text())
     except FileNotFoundError:
         return {
-            "top_margin_below_cover_pct": 1.5,
-            "bottom_margin_below_intro_pct": 1.5,
-            "side_margin_around_panel_pct": 1.5,
+            "top_margin_above_avatar_pct": 13.15,
+            "left_margin_pct": 1.2,
+            "right_margin_pct": 1.6,
+            "bottom_margin_pct": 1.0,
         }
 
 
@@ -130,7 +140,34 @@ def _find_lower_panel_bbox(gray: np.ndarray, w: int, h: int) -> BBox | None:
     return BBox(px, py, px + pw, py + ph)
 
 
-def _find_intro_card_bbox(gray: np.ndarray, w: int, h: int, panel: BBox) -> BBox | None:
+def _white_card_top_below(gray: np.ndarray, box: BBox, max_scan: int = 220) -> int | None:
+    """First row below `box` (within its x-range) that starts another white card.
+
+    Returns the y of the next card's top edge, or None if no card within
+    `max_scan` px. Used to keep the crop's bottom from spilling into the
+    card stacked below the intro/Personal-details card.
+    """
+    h = gray.shape[0]
+    y0 = box.bottom
+    y1 = min(h, box.bottom + max_scan)
+    if y1 - y0 < 5 or box.width < 50:
+        return None
+    strip = gray[y0:y1, box.left:box.right]
+    white_per_row = (strip > _CARD_WHITE_THRESHOLD).sum(axis=1)
+    thr = box.width * 0.5
+    run = 0
+    for i, v in enumerate(white_per_row):
+        if v >= thr:
+            run += 1
+            if run >= 3:
+                return y0 + i - run + 1
+        else:
+            run = 0
+    return None
+
+
+def _find_cards(gray: np.ndarray, w: int, h: int, panel: BBox) -> list[tuple[int, int, int, int]]:
+    """All qualifying white cards inside the lower gray panel, as (x,y,w,h)."""
     in_panel = np.zeros_like(gray)
     in_panel[panel.top:panel.bottom, panel.left:panel.right] = (
         gray[panel.top:panel.bottom, panel.left:panel.right]
@@ -150,12 +187,8 @@ def _find_intro_card_bbox(gray: np.ndarray, w: int, h: int, panel: BBox) -> BBox
         if ch < _CARD_MIN_HEIGHT_PX:
             continue
         cards.append((cx, cy, cw, ch))
-    if not cards:
-        return None
-    # Intro card = leftmost card.
-    cards.sort(key=lambda c: c[0])
-    cx, cy, cw, ch = cards[0]
-    return BBox(cx, cy, cx + cw, cy + ch)
+    cards.sort(key=lambda c: c[0])  # left → right
+    return cards
 
 
 def _find_avatar_bbox(gray: np.ndarray, w: int, h: int, panel_top: int) -> BBox | None:
@@ -183,24 +216,34 @@ def _find_avatar_bbox(gray: np.ndarray, w: int, h: int, panel_top: int) -> BBox 
     )
     if circles is None:
         return None
-    # Filter: circle must fit entirely within the band (no negative coords).
-    valid = [
-        c for c in circles[0]
-        if c[1] - c[2] >= 0 and c[1] + c[2] <= band.shape[0]
-    ]
+    # The avatar sits in the left portion of the header. Its top edge often
+    # extends slightly above the search band (it straddles the cover-photo
+    # boundary), so we only require the circle CENTER to be on the left half
+    # and let the bbox clamp to the image. (An earlier "fully inside band"
+    # filter wrongly rejected avatars whose top crossed the band edge.)
+    valid = [c for c in circles[0] if c[0] < w * 0.6]
     if not valid:
         return None
     cx, cy, r = (float(v) for v in sorted(valid, key=lambda c: c[0])[0])  # leftmost
     return BBox(
-        int(cx - r),
-        band_top + int(cy - r),
+        max(0, int(cx - r)),
+        max(0, band_top + int(cy - r)),
         int(cx + r),
         band_top + int(cy + r),
     )
 
 
 def detect_profile_landmarks(img: np.ndarray) -> dict[str, BBox] | None:
-    """Detect FB profile landmarks: avatar, lower_panel, intro_card."""
+    """Detect FB profile landmarks: avatar, content_column, intro_card.
+
+    - avatar:         Hough circle of the profile picture.
+    - content_column: the centered body column (union of the white cards in
+                      the lower panel). When no cards are visible, derived by
+                      mirroring the avatar's left edge about the image center.
+                      Reported as a full-height strip for the tuner overlay.
+    - intro_card:     leftmost white card (only present when cards detected);
+                      its bottom is the crop's bottom anchor.
+    """
     h, w = img.shape[:2]
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -210,14 +253,78 @@ def detect_profile_landmarks(img: np.ndarray) -> dict[str, BBox] | None:
     avatar = _find_avatar_bbox(gray, w, h, panel.top)
     if avatar is None:
         return None
-    intro = _find_intro_card_bbox(gray, w, h, panel)
-    out = {
+
+    cards = _find_cards(gray, w, h, panel)
+    next_card_bbox = None
+    if cards:
+        col_left = min(c[0] for c in cards)
+        col_right = max(c[0] + c[2] for c in cards)
+        intro = cards[0]  # leftmost
+        intro_bbox = BBox(intro[0], intro[1], intro[0] + intro[2], intro[1] + intro[3])
+        # The card stacked directly below the intro (e.g. Friends/Photos),
+        # which may be too short / cut off to register as its own card.
+        nxt = _white_card_top_below(gray, intro_bbox)
+        if nxt is not None:
+            next_card_bbox = BBox(intro_bbox.left, nxt, intro_bbox.right, min(h, nxt + 10))
+    else:
+        # No intro card in viewport — mirror the avatar's left edge about the
+        # image center to recover the (centered) content column.
+        col_left = avatar.left
+        col_right = w - avatar.left
+        intro_bbox = None
+
+    content_column = BBox(col_left, 0, col_right, h)
+
+    out: dict[str, BBox] = {
         "avatar": avatar,
-        "lower_panel": panel,
+        "content_column": content_column,
     }
-    if intro is not None:
-        out["intro_card"] = intro
+    if intro_bbox is not None:
+        out["intro_card"] = intro_bbox
+    if next_card_bbox is not None:
+        out["next_card"] = next_card_bbox
     return out
+
+
+def profile_crop_from_landmarks(landmarks: dict, w: int, h: int, tuning: dict) -> BBox:
+    """Compute the FB profile crop bbox from detected landmarks + tuning.
+
+    Shared by the runtime detector and the tuner GUI so they never drift.
+
+      - top    = avatar.top − top margin (reaches into the cover photo)
+      - left   = content column left − left margin
+      - right  = content column right + right margin
+      - bottom = intro card bottom + bottom margin, capped to the gap above
+                 the next card so that card never pokes in.
+    Left and right are independent because the dark post images on the right
+    read as visually "heavier" than the airy cards on the left, so a slightly
+    larger right margin makes the blue look balanced even though it isn't
+    pixel-equal. All margins are a percentage of image WIDTH (top of HEIGHT).
+    """
+    avatar = landmarks["avatar"]
+    column = landmarks["content_column"]
+    intro = landmarks.get("intro_card")
+    next_card = landmarks.get("next_card")
+
+    top_m = int(h * tuning["top_margin_above_avatar_pct"] / 100.0)
+    left_m = int(w * tuning["left_margin_pct"] / 100.0)
+    right_m = int(w * tuning["right_margin_pct"] / 100.0)
+    bot_m = int(w * tuning["bottom_margin_pct"] / 100.0)
+
+    # Cap the BOTTOM margin to the blue gap before the next card so it never
+    # pokes into the frame. Sides are unaffected.
+    if intro is not None and next_card is not None:
+        gap = next_card.top - intro.bottom
+        bot_m = max(0, min(bot_m, gap - 2))
+
+    crop_top = max(0, avatar.top - top_m)
+    if intro is not None:
+        crop_bottom = min(h, intro.bottom + bot_m)
+    else:
+        crop_bottom = h
+    crop_left = max(0, column.left - left_m)
+    crop_right = min(w, column.right + right_m)
+    return BBox(crop_left, crop_top, crop_right, crop_bottom)
 
 
 def _detect_profile(img: np.ndarray, requested: list[str]) -> dict[str, BBox] | None:
@@ -227,34 +334,22 @@ def _detect_profile(img: np.ndarray, requested: list[str]) -> dict[str, BBox] | 
         return None
 
     avatar = landmarks["avatar"]
-    panel = landmarks["lower_panel"]
+    column = landmarks["content_column"]
     intro = landmarks.get("intro_card")
 
-    t = _load_tuning()
-    top_m = int(h * t["top_margin_above_avatar_pct"] / 100.0)
-    bot_m = int(h * t["bottom_margin_below_intro_pct"] / 100.0)
-    side_m = int(w * t["side_margin_around_panel_pct"] / 100.0)
-
-    crop_top = max(0, avatar.top - top_m)
-    if intro is not None:
-        crop_bottom = min(h, intro.bottom + bot_m)
-    else:
-        crop_bottom = min(h, panel.bottom + bot_m)
-    crop_left = max(0, panel.left - side_m)
-    crop_right = min(w, panel.right + side_m)
+    bbox = profile_crop_from_landmarks(landmarks, w, h, _load_tuning())
+    crop_left, crop_top, crop_right, crop_bottom = bbox.left, bbox.top, bbox.right, bbox.bottom
 
     if crop_right - crop_left < w * 0.3 or crop_bottom - crop_top < h * 0.15:
         return None
-
-    bbox = BBox(crop_left, crop_top, crop_right, crop_bottom)
     out: dict[str, BBox] = {}
     for c in requested:
         if c in ("post", "post_card", "profile", "main_account"):
             out[c] = bbox
         elif c == "avatar":
             out[c] = avatar
-        elif c == "lower_panel":
-            out[c] = panel
+        elif c == "content_column":
+            out[c] = column
         elif c == "intro_card" and intro is not None:
             out[c] = intro
         else:

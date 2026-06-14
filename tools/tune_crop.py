@@ -50,9 +50,10 @@ SLIDER_CONFIG = {
         ("side_margin_around_buttons_pct",   "side margin (equidistant L/R around buttons, % of w)", 0.0, 5.0),
     ],
     ("facebook", "main_account"): [
-        ("top_margin_above_avatar_pct",      "top margin (above avatar, % of h)",                   0.0, 8.0),
-        ("bottom_margin_below_intro_pct",    "bottom margin (below intro card, % of h)",            0.0, 6.0),
-        ("side_margin_around_panel_pct",     "side margin (equidistant L/R around panel, % of w)",   0.0, 5.0),
+        ("top_margin_above_avatar_pct",      "top margin (above avatar, into cover photo, % of h)", 0.0, 18.0),
+        ("left_margin_pct",                  "left margin (blue left of content, % of w)",          0.0, 5.0),
+        ("right_margin_pct",                 "right margin (blue right of content, % of w)",        0.0, 5.0),
+        ("bottom_margin_pct",                "bottom margin (blue below intro, capped to gap, % of w)", 0.0, 5.0),
     ],
 }
 
@@ -72,22 +73,30 @@ def _compute_crop(platform: str, post_style: str, img_w: int, img_h: int,
             "top": max(0, top_anchor - top_m),
             "right": min(img_w, btn.right + side_m),
             "bottom": min(img_h, btn.bottom + bot_m),
-            "top_m_px": top_m, "bot_m_px": bot_m, "side_m_px": side_m,
+            "margins_px": {
+                "top_margin_above_avatar_pct": top_m,
+                "bottom_margin_below_buttons_pct": bot_m,
+                "side_margin_around_buttons_pct": side_m,
+            },
         }
     if platform == "facebook" and post_style == "main_account":
+        from hrb.vision.facebook import profile_crop_from_landmarks
+        bb = profile_crop_from_landmarks(landmarks, img_w, img_h, t)
         avatar = landmarks["avatar"]
-        panel = landmarks["lower_panel"]
         intro = landmarks.get("intro_card")
-        top_m = int(img_h * t["top_margin_above_avatar_pct"] / 100.0)
-        bot_m = int(img_h * t["bottom_margin_below_intro_pct"] / 100.0)
-        side_m = int(img_w * t["side_margin_around_panel_pct"] / 100.0)
-        bottom_anchor = intro.bottom if intro is not None else panel.bottom
+        column = landmarks["content_column"]
+        top_m = avatar.top - bb.top
+        left_m = column.left - bb.left
+        right_m = bb.right - column.right
+        bot_m = (bb.bottom - intro.bottom) if intro is not None else 0
         return {
-            "left": max(0, panel.left - side_m),
-            "top": max(0, avatar.top - top_m),
-            "right": min(img_w, panel.right + side_m),
-            "bottom": min(img_h, bottom_anchor + bot_m),
-            "top_m_px": top_m, "bot_m_px": bot_m, "side_m_px": side_m,
+            "left": bb.left, "top": bb.top, "right": bb.right, "bottom": bb.bottom,
+            "margins_px": {
+                "top_margin_above_avatar_pct": top_m,
+                "left_margin_pct": left_m,
+                "right_margin_pct": right_m,
+                "bottom_margin_pct": bot_m,
+            },
         }
     raise ValueError(f"no crop hook for {platform}/{post_style}")
 
@@ -105,13 +114,12 @@ def _landmark_detector(platform: str, post_style: str):
 
 # Color-coding for landmark overlays in the GUI (rendered in stable order).
 _LANDMARK_COLORS = {
-    "content_top":   "#f3f",   # magenta
-    "avatar":        "#3af",   # blue
-    "buttons_row":   "#fa3",   # orange
-    "cover_photo":   "#f55",   # red
-    "lower_panel":   "#9c9",   # pale green
-    "intro_card":    "#fa3",   # orange (reusing same accent as buttons_row)
-    "tabs_row":      "#cf3",   # yellow-green
+    "content_top":    "#f3f",   # magenta
+    "avatar":         "#3af",   # blue
+    "buttons_row":    "#fa3",   # orange
+    "content_column": "#9c9",   # pale green (FB body column)
+    "intro_card":     "#fa3",   # orange
+    "next_card":      "#f55",   # red (the card below intro — crop must not show it)
 }
 
 
@@ -285,14 +293,10 @@ def run(platform: str, post_style: str, captures, tuning_path: Path) -> None:
                          f"{landmark_summary}\n"
                          f"crop=({crop['left']},{crop['top']})–({crop['right']},{crop['bottom']})")
 
-        # readouts: top/bot/side margins in pixels (mapped by slider order).
-        keys = [k for k, *_ in SLIDER_CONFIG[(platform, post_style)]]
-        if len(keys) >= 1:
-            px_readouts[keys[0]].config(text=f"= {crop['top_m_px']:>4d}px")
-        if len(keys) >= 2:
-            px_readouts[keys[1]].config(text=f"= {crop['bot_m_px']:>4d}px")
-        if len(keys) >= 3:
-            px_readouts[keys[2]].config(text=f"= {crop['side_m_px']:>4d}px")
+        # readouts: each slider's margin in pixels, keyed by its json key.
+        for key, px in crop.get("margins_px", {}).items():
+            if key in px_readouts:
+                px_readouts[key].config(text=f"= {px:>4d}px")
 
     def on_slider_change():
         render()
