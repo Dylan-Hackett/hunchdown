@@ -1,7 +1,7 @@
 {
   "comment": "Per-platform crop tuning for FB profile pages. Edit via tools/tune_crop.py or by hand. Margins are % of image width (top is % of height). left/right are independent so the right can carry a touch more blue to balance the visually-heavy dark post images. bottom auto-caps to the gap above the next card so it never shows.",
   "top_margin_above_avatar_pct": 13.15,
-  "left_margin_pct": 1.2,
-  "right_margin_pct": 1.15,
+  "left_margin_pct": 1.4,
+  "right_margin_pct": 1.2,
   "bottom_margin_pct": 1.0
 }

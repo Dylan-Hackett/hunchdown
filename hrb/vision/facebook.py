@@ -335,7 +335,13 @@ def profile_crop_from_landmarks(landmarks: dict, w: int, h: int, tuning: dict) -
         crop_bottom = min(h, intro.bottom + bot_m)
     else:
         crop_bottom = h
-    crop_left = max(0, column.left - left_m)
+    # Anchor the LEFT on the avatar, not the card column. FB's body cards sit
+    # ~20px further left than the avatar/name header, so anchoring on the card
+    # leaves the avatar visually swimming in blue on the left. The avatar is
+    # the eye's reference for left/right balance, so frame to it. (The card's
+    # slight left overhang is far less noticeable than the avatar's gap.)
+    left_anchor = avatar.left if avatar.left >= column.left else column.left
+    crop_left = max(0, left_anchor - left_m)
     crop_right = min(w, column.right + right_m)
     return BBox(crop_left, crop_top, crop_right, crop_bottom)
 

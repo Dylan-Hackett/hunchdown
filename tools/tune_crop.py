@@ -86,7 +86,9 @@ def _compute_crop(platform: str, post_style: str, img_w: int, img_h: int,
         intro = landmarks.get("intro_card")
         column = landmarks["content_column"]
         top_m = avatar.top - bb.top
-        left_m = column.left - bb.left
+        # Left is anchored on the avatar (see facebook.profile_crop_from_landmarks).
+        left_anchor = avatar.left if avatar.left >= column.left else column.left
+        left_m = left_anchor - bb.left
         right_m = bb.right - column.right
         bot_m = (bb.bottom - intro.bottom) if intro is not None else 0
         return {
