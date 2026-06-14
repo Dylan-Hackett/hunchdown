@@ -59,6 +59,12 @@ _CENTER_BAND = (0.15, 0.85)
 _EDGE_MARGIN_PX = 5
 _WIDTH_TOLERANCE_FRAC = 0.20
 _X_TOLERANCE_PX = 60
+# A real "open as post" card is a large centered region (~46% wide, ~39%
+# area in testing). Anything well below this is a misfire on a non-feed
+# surface (photo lightbox, video player) — reject so the writer falls back
+# to the static preset crop instead of emitting a garbage sliver.
+_CARD_MIN_WIDTH_FRAC = 0.25
+_CARD_MIN_AREA_FRAC = 0.08
 
 
 def _detect_modal_post(img: np.ndarray, requested: list[str]) -> dict[str, BBox] | None:
@@ -99,6 +105,13 @@ def _detect_modal_post(img: np.ndarray, requested: list[str]) -> dict[str, BBox]
     top = min(s[1] for s in same_card)
     right = max(s[0] + s[2] for s in same_card)
     bottom = max(s[1] + s[3] for s in same_card)
+
+    # Sanity guard: reject implausibly small cards (non-feed surfaces) so the
+    # caller falls back to the static preset crop.
+    if (right - left) < w * _CARD_MIN_WIDTH_FRAC:
+        return None
+    if (right - left) * (bottom - top) < img_area * _CARD_MIN_AREA_FRAC:
+        return None
     return BBox(left, top, right, bottom)
 
 
