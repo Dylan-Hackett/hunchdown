@@ -1,0 +1,19 @@
+{
+  "platform": "cashapp",
+  "post_style": "main_account",
+  "url_patterns": [
+    "cash\\.app/\\$[^/?#]+"
+  ],
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.0
+  },
+  "created_by": "Dylan Hackett",
+  "crop": {
+    "left_pct": 26.984,
+    "top_pct": 14.63,
+    "right_pct": 26.455,
+    "bottom_pct": 37.901
+  },
+  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+}

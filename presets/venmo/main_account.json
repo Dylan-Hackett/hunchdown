@@ -1,0 +1,20 @@
+{
+  "platform": "venmo",
+  "post_style": "main_account",
+  "url_patterns": [
+    "venmo\\.com/u/[^/?#]+",
+    "account\\.venmo\\.com/u/[^/?#]+"
+  ],
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.0
+  },
+  "created_by": "Dylan Hackett",
+  "crop": {
+    "left_pct": 45.47,
+    "top_pct": 8.441,
+    "right_pct": 24.603,
+    "bottom_pct": 43.235
+  },
+  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+}

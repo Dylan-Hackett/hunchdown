@@ -1,0 +1,19 @@
+{
+  "platform": "pinterest",
+  "post_style": "main_account",
+  "url_patterns": [
+    "pinterest\\.com/[^/?#]+/?(?:$|[?#])"
+  ],
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.0
+  },
+  "created_by": "Dylan Hackett",
+  "crop": {
+    "left_pct": 30.919,
+    "top_pct": 9.186,
+    "right_pct": 26.29,
+    "bottom_pct": 50.247
+  },
+  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+}

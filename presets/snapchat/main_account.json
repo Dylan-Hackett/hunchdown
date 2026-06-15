@@ -1,0 +1,19 @@
+{
+  "platform": "snapchat",
+  "post_style": "main_account",
+  "url_patterns": [
+    "snapchat\\.com/@[^/?#]+"
+  ],
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.0
+  },
+  "created_by": "Dylan Hackett",
+  "crop": {
+    "left_pct": 26.62,
+    "top_pct": 18.889,
+    "right_pct": 27.447,
+    "bottom_pct": 25.247
+  },
+  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+}

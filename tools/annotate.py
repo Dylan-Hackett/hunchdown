@@ -61,14 +61,17 @@ PRESET_LABELS = [
 ]
 
 
-def _filter_captures(docx_path: Path, platform: str, post_style: str):
+def _filter_captures(docx_path: Path, platforms, post_style: str):
+    """platforms: a set/list of platform ids (or {"all"} for every platform)."""
     parsed = parse_docx(docx_path)
     with zipfile.ZipFile(BytesIO(parsed.zip_bytes)) as zf:
         media = {n: zf.read(n) for n in zf.namelist() if n.startswith("word/media/")}
 
+    want = set(platforms)
     out = []
     for c in parsed.captures:
-        if classify(c.url) != platform:
+        platform = classify(c.url)
+        if "all" not in want and platform not in want:
             continue
         is_main = is_main_account_url(c.url, platform)
         if post_style == "main_account" and not is_main:
@@ -490,13 +493,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--docx", required=True, type=Path)
     p.add_argument("--platform", required=True,
-                   choices=["facebook", "instagram", "tiktok", "x", "threads"])
+                   help="platform id, comma-separated list, or 'all'")
     p.add_argument("--post-style", required=True,
                    choices=["main_account", "single_post"])
     p.add_argument("--out", required=True, type=Path)
     args = p.parse_args()
 
-    captures = _filter_captures(args.docx, args.platform, args.post_style)
+    platforms = [p.strip() for p in args.platform.split(",") if p.strip()]
+    captures = _filter_captures(args.docx, platforms, args.post_style)
     if not captures:
         print(f"No {args.platform} {args.post_style} captures found in {args.docx}")
         return 1

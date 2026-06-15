@@ -1,0 +1,19 @@
+{
+  "platform": "yelp",
+  "post_style": "main_account",
+  "url_patterns": [
+    "yelp\\.com/user_details\\?userid="
+  ],
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.0
+  },
+  "created_by": "Dylan Hackett",
+  "crop": {
+    "left_pct": 10.979,
+    "top_pct": 16.646,
+    "right_pct": 10.946,
+    "bottom_pct": 6.289
+  },
+  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+}
