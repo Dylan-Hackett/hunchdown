@@ -4,6 +4,7 @@
   "url_patterns": [
     "threads\\.(?:com|net)/@[^/?#]+/?(?:$|[?#])"
   ],
+  "components": ["profile"],
   "crop": {
     "left_pct": 19.53,
     "top_pct": 8.3,

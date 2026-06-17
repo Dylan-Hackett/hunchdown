@@ -4,6 +4,7 @@
   "url_patterns": [
     "tiktok\\.com/@[^/?#]+/?(?:$|[?#])"
   ],
+  "components": ["profile"],
   "crop": {
     "left_pct": 15.55,
     "top_pct": 1.87,

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from ._common import BBox, CropResult, bbox_to_crop_pct, decode_image, union_bboxes
 from . import facebook, instagram, tiktok
+from . import _profile
 
 
 # platform_id -> callable(img: ndarray, post_style: str, requested: list[str]) -> dict[str, BBox] | None
@@ -31,11 +32,24 @@ def detect_components(
     requested_components: list[str],
 ) -> dict[str, BBox] | None:
     """Return {component_id: BBox} for each requested component, or None on failure."""
-    detector = _REGISTRY.get(platform)
-    if detector is None:
-        return None
     img = decode_image(png_bytes)
     if img is None:
+        return None
+
+    # Config-driven profile detector handles main_account pages for platforms
+    # that don't have a dedicated module (TikTok, Threads, ...). Facebook and
+    # Instagram keep their richer per-module detectors below.
+    if post_style == "main_account" and platform in _profile.PROFILE_CONFIGS:
+        try:
+            bbox = _profile.detect_profile(img, platform)
+        except Exception:
+            return None
+        if bbox is None:
+            return None
+        return {c: bbox for c in requested_components}
+
+    detector = _REGISTRY.get(platform)
+    if detector is None:
         return None
     try:
         return detector(img, post_style, requested_components)

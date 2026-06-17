@@ -34,3 +34,4 @@ output/
 
 # Pytest
 .pytest_cache/
+static_profiles.json
