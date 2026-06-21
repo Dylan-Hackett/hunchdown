@@ -98,8 +98,11 @@ def detect_centered_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # Content = pixels that differ from the page background by more than a
-    # delta. Works on light *and* dark (TikTok) pages.
-    bg = _bg_value(gray)
+    # delta. Works on light *and* dark (TikTok) pages. For card layouts whose
+    # body is near-bg (e.g. white card on light-gray page), set bg_override to
+    # the PAGE color + a small delta so the whole card reads as one block (its
+    # internal whitespace is card-colored, not page-colored).
+    bg = cfg.get("bg_override", _bg_value(gray))
     delta = cfg.get("content_delta", 22)
     content = (np.abs(gray.astype(np.int16) - bg) > delta).astype(np.uint8) * 255
 
@@ -182,6 +185,16 @@ PROFILE_CONFIGS: dict[str, dict] = {
         "search_top_frac": 0.062, "block_gap_frac": 0.035,
         "side_margin_pct": 1.0,
     },
+    "youtube": {
+        "family": "centered_card",
+        # left nav gutter ~0.16w; single wide main column, no right sidebar.
+        # banner -> (gap) -> name/desc/Subscribe -> (big gap) -> tabs + grid.
+        "search_left_frac": 0.165, "search_right_frac": 0.93,
+        "search_top_frac": 0.06, "block_gap_frac": 0.026,
+        "side_margin_pct": 1.0,
+    },
+    # LinkedIn (stacked white cards w/ shadows on a gray page) defeats the
+    # block heuristic — needs a dedicated multi-signal detector; deferred.
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
     # non-varying layout).
