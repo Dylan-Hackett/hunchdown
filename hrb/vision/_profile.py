@@ -93,6 +93,35 @@ def _bg_value(gray: np.ndarray) -> int:
     return int(np.median(np.concatenate([c.ravel() for c in corners])))
 
 
+def _content_blocks(
+    row_has: np.ndarray, max_gap: int, min_block: int, limit: int
+) -> list[tuple[int, int]]:
+    """Up to `limit` content blocks (each >= min_block tall), top to bottom."""
+    n = len(row_has)
+    out: list[tuple[int, int]] = []
+    i = 0
+    while i < n and len(out) < limit:
+        while i < n and not row_has[i]:
+            i += 1
+        if i >= n:
+            break
+        top = i
+        bottom = i
+        gap = 0
+        while i < n:
+            if row_has[i]:
+                bottom = i
+                gap = 0
+            else:
+                gap += 1
+                if gap >= max_gap:
+                    break
+            i += 1
+        if bottom - top >= min_block:
+            out.append((top, bottom))
+    return out
+
+
 def detect_centered_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | None:
     h, w = img.shape[:2]
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -124,14 +153,23 @@ def detect_centered_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
     min_row_px = int((sr - sl) * cfg.get("row_content_frac", 0.01))
     row_has = _content_rows(band, max(8, min_row_px))
 
-    blk = _first_content_block(
-        row_has,
-        max_gap=int(h * cfg.get("block_gap_frac", 0.03)),
-        min_block=int(h * cfg.get("min_block_frac", 0.08)),
-    )
-    if blk is None:
-        return None
-    top, bottom = blk
+    max_gap = int(h * cfg.get("block_gap_frac", 0.03))
+    min_block = int(h * cfg.get("min_block_frac", 0.08))
+    n_blocks = cfg.get("n_blocks", 1)
+    if n_blocks > 1:
+        # Union the first N qualifying content blocks (e.g. banner + header),
+        # stopping before later blocks (tabs / grid / feed). Keeps min_block
+        # small so the banner and header each register as their own block.
+        blks = _content_blocks(row_has, max_gap, min_block, n_blocks)
+        if not blks:
+            return None
+        top = min(b[0] for b in blks)
+        bottom = max(b[1] for b in blks)
+    else:
+        blk = _first_content_block(row_has, max_gap=max_gap, min_block=min_block)
+        if blk is None:
+            return None
+        top, bottom = blk
 
     # Horizontal extent of content within the block.
     sub = band[top:bottom + 1, :]
@@ -188,10 +226,12 @@ PROFILE_CONFIGS: dict[str, dict] = {
     "youtube": {
         "family": "centered_card",
         # left nav gutter ~0.16w; single wide main column, no right sidebar.
-        # banner -> (gap) -> name/desc/Subscribe -> (big gap) -> tabs + grid.
+        # block1 = banner, block2 = name/desc/Subscribe, then tabs + grid.
+        # Union the first two blocks so the variable banner->header gap (which
+        # differs light vs dark) doesn't matter; the tabs/grid stay excluded.
         "search_left_frac": 0.165, "search_right_frac": 0.93,
-        "search_top_frac": 0.06, "block_gap_frac": 0.026,
-        "side_margin_pct": 1.0,
+        "search_top_frac": 0.085, "block_gap_frac": 0.018,
+        "n_blocks": 2, "min_block_frac": 0.05, "side_margin_pct": 1.0,
     },
     # LinkedIn (stacked white cards w/ shadows on a gray page) defeats the
     # block heuristic — needs a dedicated multi-signal detector; deferred.

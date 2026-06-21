@@ -1,0 +1,18 @@
+{
+  "platform": "youtube",
+  "post_style": "main_account",
+  "url_patterns": [
+    "youtube\\.com/(?:user/|channel/|c/|@)[^/?#]+"
+  ],
+  "components": ["profile"],
+  "crop": {
+    "left_pct": 21.0,
+    "top_pct": 6.0,
+    "right_pct": 6.0,
+    "bottom_pct": 46.0
+  },
+  "size": { "mode": "fixed_width", "width_inches": 6.0 },
+  "notes": "Per-capture CV crops the channel header (banner + avatar + name + Subscribe), above the tabs/video grid. Static crop is fallback.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-06-21"
+}
