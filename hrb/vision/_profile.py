@@ -52,32 +52,37 @@ def _content_rows(content: np.ndarray, min_count: int) -> np.ndarray:
 def _first_content_block(
     row_has: np.ndarray, max_gap: int, min_block: int
 ) -> tuple[int, int] | None:
-    """Top/bottom of the first sustained content block, tolerating small gaps.
+    """Top/bottom of the first content block tall enough to be the profile.
 
-    Walks from the first content row downward; ends the block at the first
-    whitespace gap >= max_gap rows. Rejects blocks shorter than min_block.
+    Splits rows into gap-separated blocks (gaps >= max_gap rows), then returns
+    the FIRST block whose height >= min_block. This skips short leading blocks
+    such as a top nav/icon row, while still stopping before secondary content
+    (pin grid, feed) that sits below a gap.
     """
     n = len(row_has)
     i = 0
-    while i < n and not row_has[i]:
-        i += 1
-    if i >= n:
-        return None
-    top = i
-    gap = 0
-    bottom = i
     while i < n:
-        if row_has[i]:
-            bottom = i
-            gap = 0
-        else:
-            gap += 1
-            if gap >= max_gap:
-                break
-        i += 1
-    if bottom - top < min_block:
-        return None
-    return top, bottom
+        # advance to next content row
+        while i < n and not row_has[i]:
+            i += 1
+        if i >= n:
+            return None
+        top = i
+        bottom = i
+        gap = 0
+        while i < n:
+            if row_has[i]:
+                bottom = i
+                gap = 0
+            else:
+                gap += 1
+                if gap >= max_gap:
+                    break
+            i += 1
+        if bottom - top >= min_block:
+            return top, bottom
+        # else: too short (nav row etc.) — continue to the next block
+    return None
 
 
 def _bg_value(gray: np.ndarray) -> int:
@@ -169,8 +174,10 @@ PROFILE_CONFIGS: dict[str, dict] = {
         "search_left_frac": 0.165, "search_right_frac": 0.64,
         "block_gap_frac": 0.035, "side_margin_pct": 1.2,
     },
-    # x / linkedin / youtube (banner family) deferred until more captures
-    # exist to build + validate CV against; they stay on static presets.
+    # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
+    # and use pixel-exact static crops (more accurate + robust than CV for a
+    # non-varying layout). X / LinkedIn / YouTube (multi-column / banner) are
+    # deferred to CV pending more captures to build + validate against.
 }
 
 _FAMILY_FUNCS = {
