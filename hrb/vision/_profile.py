@@ -174,10 +174,17 @@ PROFILE_CONFIGS: dict[str, dict] = {
         "search_left_frac": 0.165, "search_right_frac": 0.64,
         "block_gap_frac": 0.035, "side_margin_pct": 1.2,
     },
+    "x": {
+        "family": "centered_card",
+        # center column sits between the left nav (gutter ~x0.242w) and the
+        # right "you might like" sidebar (gutter ~x0.66w).
+        "search_left_frac": 0.245, "search_right_frac": 0.655,
+        "search_top_frac": 0.062, "block_gap_frac": 0.035,
+        "side_margin_pct": 1.0,
+    },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
-    # non-varying layout). X / LinkedIn / YouTube (multi-column / banner) are
-    # deferred to CV pending more captures to build + validate against.
+    # non-varying layout).
 }
 
 _FAMILY_FUNCS = {

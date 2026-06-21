@@ -5,6 +5,7 @@
     "x\\.com/[^/?#]+/?(?:$|[?#])",
     "twitter\\.com/[^/?#]+/?(?:$|[?#])"
   ],
+  "components": ["profile"],
   "crop": {
     "left_pct": 26.35,
     "top_pct": 20.93,
