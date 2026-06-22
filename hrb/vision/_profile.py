@@ -192,6 +192,11 @@ def detect_centered_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
     crop_top = max(0, top - top_m)
     crop_bottom = min(h, bottom + bot_m)
 
+    # Optional height cap ("cut it off if it runs too long").
+    max_h_frac = cfg.get("max_height_frac")
+    if max_h_frac is not None:
+        crop_bottom = min(crop_bottom, crop_top + int(h * max_h_frac))
+
     if crop_right - crop_left < w * 0.15 or crop_bottom - crop_top < h * 0.08:
         return None
     return BBox(crop_left, crop_top, crop_right, crop_bottom)
@@ -233,8 +238,17 @@ PROFILE_CONFIGS: dict[str, dict] = {
         "search_top_frac": 0.085, "block_gap_frac": 0.018,
         "n_blocks": 2, "min_block_frac": 0.05, "side_margin_pct": 1.0,
     },
-    # LinkedIn (stacked white cards w/ shadows on a gray page) defeats the
-    # block heuristic — needs a dedicated multi-signal detector; deferred.
+    "linkedin": {
+        "family": "centered_card",
+        # Frame the profile content (banner/avatar/text/buttons/sections) with
+        # a little gray page margin on each side; go down through the visible
+        # sections, capped so a long Activity feed gets cut off. The card body
+        # ≈ page gray, so we ignore "the card" and just bound the real content.
+        "search_left_frac": 0.04, "search_right_frac": 0.62,
+        "search_top_frac": 0.06, "block_gap_frac": 0.10,
+        "n_blocks": 1, "max_height_frac": 0.62, "side_margin_pct": 1.6,
+        "top_margin_pct": 1.2, "bottom_margin_pct": 1.6,
+    },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
     # non-varying layout).

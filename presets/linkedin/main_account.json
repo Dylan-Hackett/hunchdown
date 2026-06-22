@@ -1,0 +1,18 @@
+{
+  "platform": "linkedin",
+  "post_style": "main_account",
+  "url_patterns": [
+    "linkedin\\.com/in/[^/?#]+"
+  ],
+  "components": ["profile"],
+  "crop": {
+    "left_pct": 18.0,
+    "top_pct": 6.0,
+    "right_pct": 36.0,
+    "bottom_pct": 32.0
+  },
+  "size": { "mode": "fixed_width", "width_inches": 6.0 },
+  "notes": "Per-capture CV frames the profile content (banner + avatar + name + headline + buttons + sections) with a little gray page margin on each side, capped so a long Activity feed is cut off. Static crop is fallback.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-06-22"
+}
