@@ -184,13 +184,22 @@ def detect_centered_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
     top_m = int(h * tuning.get("top_margin_pct", cfg.get("top_margin_pct", 2.0)) / 100.0)
     bot_m = int(h * tuning.get("bottom_margin_pct", cfg.get("bottom_margin_pct", 2.0)) / 100.0)
 
-    # Symmetric sides about the content center.
-    cx = (left + right) / 2.0
-    half = (right - left) / 2.0 + side_m
-    crop_left = max(0, int(round(cx - half)))
-    crop_right = min(w, int(round(cx + half)))
-    crop_top = max(0, top - top_m)
-    crop_bottom = min(h, bottom + bot_m)
+    if cfg.get("fixed_frame"):
+        # Card sits at a fixed screen position (fixed-width centered layout),
+        # so left/right/top are constants for consistent framing across
+        # profiles; only the BOTTOM adapts to content length (then is capped).
+        crop_left = int(w * cfg["frame_left_frac"])
+        crop_right = int(w * cfg["frame_right_frac"])
+        crop_top = int(h * cfg["frame_top_frac"])
+        crop_bottom = min(h, bottom + bot_m)
+    else:
+        # Symmetric sides about the content center.
+        cx = (left + right) / 2.0
+        half = (right - left) / 2.0 + side_m
+        crop_left = max(0, int(round(cx - half)))
+        crop_right = min(w, int(round(cx + half)))
+        crop_top = max(0, top - top_m)
+        crop_bottom = min(h, bottom + bot_m)
 
     # Optional height cap ("cut it off if it runs too long").
     max_h_frac = cfg.get("max_height_frac")
@@ -240,14 +249,17 @@ PROFILE_CONFIGS: dict[str, dict] = {
     },
     "linkedin": {
         "family": "centered_card",
-        # Frame the profile content (banner/avatar/text/buttons/sections) with
-        # a little gray page margin on each side; go down through the visible
-        # sections, capped so a long Activity feed gets cut off. The card body
-        # ≈ page gray, so we ignore "the card" and just bound the real content.
-        "search_left_frac": 0.04, "search_right_frac": 0.62,
+        # The card is at a fixed screen position (fixed-width centered layout),
+        # so frame left/right/top are CONSTANTS for consistent framing across
+        # profiles — a little gray page margin on each side, top just above the
+        # banner. Only the BOTTOM adapts to content length, then is capped so a
+        # long Activity feed is cut off.
+        "fixed_frame": True,
+        "frame_left_frac": 0.045, "frame_right_frac": 0.635,
+        "frame_top_frac": 0.060,
+        "search_left_frac": 0.05, "search_right_frac": 0.62,
         "search_top_frac": 0.06, "block_gap_frac": 0.10,
-        "n_blocks": 1, "max_height_frac": 0.62, "side_margin_pct": 1.6,
-        "top_margin_pct": 1.2, "bottom_margin_pct": 1.6,
+        "n_blocks": 1, "max_height_frac": 0.60, "bottom_margin_pct": 1.8,
     },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
