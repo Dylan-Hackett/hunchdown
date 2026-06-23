@@ -122,6 +122,77 @@ def _content_blocks(
     return out
 
 
+def _is_page_gray(g: np.ndarray, page: int = 242, tol: int = 5) -> np.ndarray:
+    return np.abs(g.astype(np.int16) - page) <= tol
+
+
+def detect_linkedin_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | None:
+    """LinkedIn main profile card: equal gray margin off the white card edges.
+
+    The card is white on a light-gray page. Its LEFT edge is read from the
+    banner (gray->image transition; the banner spans the full card width and
+    isn't broken by the avatar/text the way the white body is). Its RIGHT
+    edge is read from the white card body (clean white->gray transition). The
+    crop frames the card with an equal gray margin on both sides, the top
+    just above the banner, and a capped bottom (the lower sections get cut
+    off — they vary and don't need to be precise).
+    """
+    h, w = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # --- card LEFT + banner TOP, from the banner band ---
+    btop_frac = cfg.get("banner_top_frac", 0.10)
+    bbot_frac = cfg.get("banner_bot_frac", 0.20)
+    band = gray[int(h * btop_frac):int(h * bbot_frac), :]
+    ng_cols = (~_is_page_gray(band)).mean(axis=0) > 0.5
+    xs = np.where(ng_cols[:int(w * 0.6)])[0]
+    if xs.size == 0:
+        return None
+    card_left = int(xs.min())
+
+    # banner top: first row below the nav where the card columns go non-gray.
+    nav_skip = int(h * cfg.get("nav_skip_frac", 0.05))
+    col_lo, col_hi = card_left, min(w, card_left + int(w * 0.4))
+    rows_ng = (~_is_page_gray(gray[:, col_lo:col_hi])).mean(axis=1)
+    banner_top = nav_skip
+    for y in range(nav_skip, int(h * 0.4)):
+        if rows_ng[y] > 0.5:
+            banner_top = y
+            break
+
+    # --- card RIGHT, from the white card body ---
+    yb = gray[int(h * 0.28):int(h * 0.55), :]
+    wf = cv2.blur((yb > 249).mean(axis=0).astype(np.float32).reshape(1, -1), (1, 15)).ravel()
+    is_white = wf > 0.4
+    runs = []
+    s = None
+    for x in range(w):
+        if is_white[x] and s is None:
+            s = x
+        elif not is_white[x] and s is not None:
+            runs.append((s, x))
+            s = None
+    if s is not None:
+        runs.append((s, w))
+    runs = [r for r in runs if r[1] - r[0] > w * 0.15]
+    if not runs:
+        return None
+    card_right = runs[0][1]
+
+    # --- frame: equal gray margin off the card edges, capped bottom ---
+    margin = int(w * tuning.get("side_margin_pct", cfg.get("side_margin_pct", 0.6)) / 100.0)
+    top_m = int(h * tuning.get("top_margin_pct", cfg.get("top_margin_pct", 0.6)) / 100.0)
+    crop_left = max(0, card_left - margin)
+    crop_right = min(w, card_right + margin)
+    crop_top = max(0, banner_top - top_m)
+    cap = tuning.get("max_height_frac", cfg.get("max_height_frac", 0.88))
+    crop_bottom = min(h, crop_top + int(h * cap))
+
+    if crop_right - crop_left < w * 0.2:
+        return None
+    return BBox(crop_left, crop_top, crop_right, crop_bottom)
+
+
 def detect_centered_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | None:
     h, w = img.shape[:2]
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -248,17 +319,12 @@ PROFILE_CONFIGS: dict[str, dict] = {
         "n_blocks": 2, "min_block_frac": 0.05, "side_margin_pct": 1.0,
     },
     "linkedin": {
-        "family": "centered_card",
-        # Captures vary in zoom, so track the actual content edges (avatar/
-        # banner/text/buttons/sections) with tight independent margins; go
-        # down through the visible sections (About etc.), capped only as a
-        # safety net for a runaway feed.
-        "independent_margins": True,
-        "search_left_frac": 0.05, "search_right_frac": 0.625,
-        "search_top_frac": 0.066, "block_gap_frac": 0.10,
-        "n_blocks": 1, "content_delta": 16,
-        "side_margin_pct": 0.4, "top_margin_pct": 0.3, "bottom_margin_pct": 0.6,
-        "max_height_frac": 0.86,
+        "family": "linkedin_card",
+        # Equal gray margin off the white card edges (left from the banner,
+        # right from the white body), top just above the banner, bottom
+        # capped (lower sections are cut off — they vary and don't matter).
+        "nav_skip_frac": 0.05, "banner_top_frac": 0.10, "banner_bot_frac": 0.20,
+        "side_margin_pct": 0.6, "top_margin_pct": 0.6, "max_height_frac": 0.88,
     },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
@@ -267,6 +333,7 @@ PROFILE_CONFIGS: dict[str, dict] = {
 
 _FAMILY_FUNCS = {
     "centered_card": detect_centered_card,
+    "linkedin_card": detect_linkedin_card,
 }
 
 
