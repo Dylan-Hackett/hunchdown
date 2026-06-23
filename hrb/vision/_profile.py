@@ -254,11 +254,11 @@ PROFILE_CONFIGS: dict[str, dict] = {
         # down through the visible sections (About etc.), capped only as a
         # safety net for a runaway feed.
         "independent_margins": True,
-        "search_left_frac": 0.05, "search_right_frac": 0.66,
+        "search_left_frac": 0.05, "search_right_frac": 0.625,
         "search_top_frac": 0.066, "block_gap_frac": 0.10,
         "n_blocks": 1, "content_delta": 16,
-        "side_margin_pct": 0.4, "top_margin_pct": 0.3, "bottom_margin_pct": 1.0,
-        "max_height_frac": 0.95,
+        "side_margin_pct": 0.4, "top_margin_pct": 0.3, "bottom_margin_pct": 0.6,
+        "max_height_frac": 0.86,
     },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
