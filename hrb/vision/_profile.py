@@ -184,13 +184,13 @@ def detect_centered_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
     top_m = int(h * tuning.get("top_margin_pct", cfg.get("top_margin_pct", 2.0)) / 100.0)
     bot_m = int(h * tuning.get("bottom_margin_pct", cfg.get("bottom_margin_pct", 2.0)) / 100.0)
 
-    if cfg.get("fixed_frame"):
-        # Card sits at a fixed screen position (fixed-width centered layout),
-        # so left/right/top are constants for consistent framing across
-        # profiles; only the BOTTOM adapts to content length (then is capped).
-        crop_left = int(w * cfg["frame_left_frac"])
-        crop_right = int(w * cfg["frame_right_frac"])
-        crop_top = int(h * cfg["frame_top_frac"])
+    if cfg.get("independent_margins"):
+        # Track the actual content edges with small independent margins
+        # (captures may be at different zoom, so the frame can't be fixed and
+        # symmetric centering would make one side swing with the other).
+        crop_left = max(0, left - side_m)
+        crop_right = min(w, right + side_m)
+        crop_top = max(0, top - top_m)
         crop_bottom = min(h, bottom + bot_m)
     else:
         # Symmetric sides about the content center.
@@ -249,17 +249,16 @@ PROFILE_CONFIGS: dict[str, dict] = {
     },
     "linkedin": {
         "family": "centered_card",
-        # The card is at a fixed screen position (fixed-width centered layout),
-        # so frame left/right/top are CONSTANTS for consistent framing across
-        # profiles — a little gray page margin on each side, top just above the
-        # banner. Only the BOTTOM adapts to content length, then is capped so a
-        # long Activity feed is cut off.
-        "fixed_frame": True,
-        "frame_left_frac": 0.045, "frame_right_frac": 0.635,
-        "frame_top_frac": 0.060,
-        "search_left_frac": 0.05, "search_right_frac": 0.62,
-        "search_top_frac": 0.06, "block_gap_frac": 0.10,
-        "n_blocks": 1, "max_height_frac": 0.60, "bottom_margin_pct": 1.8,
+        # Captures vary in zoom, so track the actual content edges (avatar/
+        # banner/text/buttons/sections) with tight independent margins; go
+        # down through the visible sections (About etc.), capped only as a
+        # safety net for a runaway feed.
+        "independent_margins": True,
+        "search_left_frac": 0.05, "search_right_frac": 0.66,
+        "search_top_frac": 0.066, "block_gap_frac": 0.10,
+        "n_blocks": 1, "content_delta": 16,
+        "side_margin_pct": 0.4, "top_margin_pct": 0.3, "bottom_margin_pct": 1.0,
+        "max_height_frac": 0.95,
     },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
