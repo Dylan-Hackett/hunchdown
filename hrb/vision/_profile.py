@@ -186,17 +186,50 @@ def detect_linkedin_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
         return None
     card_right = runs[0][1]
 
-    # --- frame: equal gray margin off the card edges, capped bottom ---
-    # The margin is one pixel value used on all three framed sides (left,
-    # right, top) so the gray reads equal everywhere. It's derived from the
-    # image WIDTH; using height for the top would make the top gray ~half the
-    # side gray since the capture is wider than it is tall.
+    # --- frame: equal gray margin off the card edges ---
+    # The margin is one pixel value used on all framed sides (left, right,
+    # top, and below the About section) so the gray reads equal everywhere.
+    # It's derived from the image WIDTH; using height for the top/bottom
+    # would make those margins ~half the side gray since the capture is
+    # wider than it is tall.
     margin = int(w * tuning.get("side_margin_pct", cfg.get("side_margin_pct", 0.6)) / 100.0)
     crop_left = max(0, card_left - margin)
     crop_right = min(w, card_right + margin)
     crop_top = max(0, banner_top - margin)
-    cap = tuning.get("max_height_frac", cfg.get("max_height_frac", 0.88))
-    crop_bottom = min(h, crop_top + int(h * cap))
+
+    # --- bottom: cut just after the About section, with gray below ---
+    # The profile is a stack of white cards (intro, About, then more
+    # sections) separated by gray gaps. Find those gaps below the cover,
+    # skip the small header sub-gaps near the top, and cut at the gap that
+    # follows the About section (the Nth card down; intro + About = 2). The
+    # gray below is min(margin, gap height): inter-section gaps run only
+    # ~9-30px, so on a tight gap we take what fits rather than bleed the
+    # next section into frame.
+    gap_frac = _is_page_gray(gray[:, col_lo:col_hi]).mean(axis=1)
+    min_gap_len = max(3, int(h * cfg.get("min_gap_frac", 0.004)))
+    section_skip = banner_top + int(h * cfg.get("intro_min_frac", 0.25))
+    gaps: list[tuple[int, int]] = []
+    in_gap = False
+    g_start = 0
+    for yy in range(section_skip, h):
+        if gap_frac[yy] > 0.8:
+            if not in_gap:
+                g_start, in_gap = yy, True
+        elif in_gap:
+            if yy - g_start >= min_gap_len:
+                gaps.append((g_start, yy - 1))
+            in_gap = False
+    if in_gap and h - g_start >= min_gap_len:
+        gaps.append((g_start, h - 1))
+
+    if gaps:
+        n = cfg.get("sections_below_cover", 2)  # intro + About
+        gap = gaps[n - 1] if len(gaps) >= n else gaps[-1]
+        card_bottom, gap_end = gap
+        crop_bottom = min(h, card_bottom + min(margin, gap_end - card_bottom + 1))
+    else:
+        cap = tuning.get("max_height_frac", cfg.get("max_height_frac", 0.88))
+        crop_bottom = min(h, crop_top + int(h * cap))
 
     if crop_right - crop_left < w * 0.2:
         return None
@@ -330,13 +363,17 @@ PROFILE_CONFIGS: dict[str, dict] = {
     },
     "linkedin": {
         "family": "linkedin_card",
-        # Equal gray margin off the white card edges (left from the banner,
-        # right from the white body), top just above the banner, bottom
-        # capped (lower sections are cut off — they vary and don't matter).
-        # side_margin_pct is the single gray margin used on the left, right,
-        # AND top (in pixels) so the gray reads equal on all three sides.
-        "nav_skip_frac": 0.05, "banner_top_frac": 0.10, "banner_bot_frac": 0.20,
-        "side_margin_pct": 0.6, "max_height_frac": 0.88,
+        # Equal gray margin off the white card edges: left from the banner,
+        # right from the white body, top above the cover photo, and below the
+        # About section. side_margin_pct is that single margin (in pixels off
+        # the width) used on all four framed sides so the gray reads equal.
+        "nav_skip_frac": 0.02, "banner_top_frac": 0.10, "banner_bot_frac": 0.20,
+        "side_margin_pct": 0.6,
+        # Bottom: cut after the Nth card down (intro + About = 2). Skip header
+        # sub-gaps within intro_min_frac of the cover; a gap must be at least
+        # min_gap_frac tall to count. max_height_frac is the no-gaps fallback.
+        "sections_below_cover": 2, "intro_min_frac": 0.25,
+        "min_gap_frac": 0.004, "max_height_frac": 0.88,
     },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a
