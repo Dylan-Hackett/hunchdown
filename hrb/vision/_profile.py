@@ -150,15 +150,22 @@ def detect_linkedin_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
         return None
     card_left = int(xs.min())
 
-    # banner top: first row below the nav where the card columns go non-gray.
-    nav_skip = int(h * cfg.get("nav_skip_frac", 0.05))
+    # banner top = top edge of the cover photo. The page has a fixed global
+    # nav + search bar (white, non-gray) at the very top, THEN a gray gap
+    # (page background), THEN the cover photo. So we can't take the first
+    # non-gray row (that's the search bar). Instead: skip the nav by walking
+    # down to the gray gap, then through it, and stop at the cover photo's
+    # first non-gray row.
+    nav_skip = int(h * cfg.get("nav_skip_frac", 0.02))
+    limit = int(h * 0.4)
     col_lo, col_hi = card_left, min(w, card_left + int(w * 0.4))
     rows_ng = (~_is_page_gray(gray[:, col_lo:col_hi])).mean(axis=1)
-    banner_top = nav_skip
-    for y in range(nav_skip, int(h * 0.4)):
-        if rows_ng[y] > 0.5:
-            banner_top = y
-            break
+    y = nav_skip
+    while y < limit and rows_ng[y] > 0.5:   # skip the nav / search bar
+        y += 1
+    while y < limit and rows_ng[y] <= 0.5:  # skip the gray gap below the nav
+        y += 1
+    banner_top = y if y < limit else nav_skip
 
     # --- card RIGHT, from the white card body ---
     yb = gray[int(h * 0.28):int(h * 0.55), :]
@@ -180,11 +187,14 @@ def detect_linkedin_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
     card_right = runs[0][1]
 
     # --- frame: equal gray margin off the card edges, capped bottom ---
+    # The margin is one pixel value used on all three framed sides (left,
+    # right, top) so the gray reads equal everywhere. It's derived from the
+    # image WIDTH; using height for the top would make the top gray ~half the
+    # side gray since the capture is wider than it is tall.
     margin = int(w * tuning.get("side_margin_pct", cfg.get("side_margin_pct", 0.6)) / 100.0)
-    top_m = int(h * tuning.get("top_margin_pct", cfg.get("top_margin_pct", 0.6)) / 100.0)
     crop_left = max(0, card_left - margin)
     crop_right = min(w, card_right + margin)
-    crop_top = max(0, banner_top - top_m)
+    crop_top = max(0, banner_top - margin)
     cap = tuning.get("max_height_frac", cfg.get("max_height_frac", 0.88))
     crop_bottom = min(h, crop_top + int(h * cap))
 
@@ -323,8 +333,10 @@ PROFILE_CONFIGS: dict[str, dict] = {
         # Equal gray margin off the white card edges (left from the banner,
         # right from the white body), top just above the banner, bottom
         # capped (lower sections are cut off — they vary and don't matter).
+        # side_margin_pct is the single gray margin used on the left, right,
+        # AND top (in pixels) so the gray reads equal on all three sides.
         "nav_skip_frac": 0.05, "banner_top_frac": 0.10, "banner_bot_frac": 0.20,
-        "side_margin_pct": 0.6, "top_margin_pct": 0.6, "max_height_frac": 0.88,
+        "side_margin_pct": 0.6, "max_height_frac": 0.88,
     },
     # Snapchat / Cash App / Venmo / Pinterest / Yelp are FIXED-layout pages
     # and use pixel-exact static crops (more accurate + robust than CV for a

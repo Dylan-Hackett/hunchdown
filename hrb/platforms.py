@@ -9,8 +9,8 @@ from urllib.parse import unquote, urlparse
 
 
 PLATFORM_ORDER = [
-    "facebook", "instagram", "tiktok", "x", "snapchat",
-    "linkedin", "venmo", "youtube", "threads", "reddit",
+    "facebook", "instagram", "snapchat", "linkedin", "venmo",
+    "tiktok", "x", "youtube", "threads", "reddit",
     "yelp", "cashapp", "paypal", "spotify", "soundcloud",
     "twitch", "pinterest", "vimeo", "medium", "bluesky",
     "telegram", "github", "letterboxd", "onlyfans", "vsco",
