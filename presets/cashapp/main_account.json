@@ -11,9 +11,9 @@
   "created_by": "Dylan Hackett",
   "crop": {
     "left_pct": 26.984,
-    "top_pct": 14.63,
+    "top_pct": 14.7,
     "right_pct": 26.455,
-    "bottom_pct": 37.901
+    "bottom_pct": 27.0
   },
-  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+  "notes": "Static profile crop. Shows name + cashtag below the QR with even whitespace above the QR card (~26px) and below the cashtag (~30px); scan-text and store buttons excluded. Tuned for the standard (taller) capture; shorter captures may sit tighter at the bottom."
 }

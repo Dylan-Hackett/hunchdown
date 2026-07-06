@@ -11,10 +11,10 @@
   },
   "created_by": "Dylan Hackett",
   "crop": {
-    "left_pct": 45.47,
+    "left_pct": 38.8,
     "top_pct": 8.441,
-    "right_pct": 24.603,
+    "right_pct": 17.9,
     "bottom_pct": 43.235
   },
-  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+  "notes": "Static profile crop, baked from 1 annotated capture(s). Widened L/R ~6.7% each (symmetric about the centered profile block at x~60.4%) for more white margin either side of the dead space."
 }

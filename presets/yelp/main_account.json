@@ -13,7 +13,7 @@
     "left_pct": 10.979,
     "top_pct": 16.646,
     "right_pct": 10.946,
-    "bottom_pct": 6.289
+    "bottom_pct": 2.1
   },
-  "notes": "Static profile crop, baked from 1 annotated capture(s)."
+  "notes": "Static profile crop. Bottom extended down to the 'More about me' block (full left nav + box shown) with a small margin. Tuned for a standard-length user profile; longer profiles whose page/screenshot runs past this just show down to the crop line."
 }
