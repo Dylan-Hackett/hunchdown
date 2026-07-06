@@ -1,0 +1,206 @@
+[
+  {
+    "sha256": "87058720ddabeb8baad28b5a101d861aa98fc2e033928526345e40e4aaae2db3",
+    "url": "https://www.linkedin.com/in/jeroenzweers/",
+    "image_media_path": "word/media/df2730e5299d970008ee3093d8f8aed758a4681b.png",
+    "image_size_px": [
+      3024,
+      1554
+    ],
+    "boxes": [
+      {
+        "label": "ideal_crop",
+        "l_px": 598,
+        "t_px": 105,
+        "r_px": 1892,
+        "b_px": 1248
+      },
+      {
+        "label": "avatar",
+        "l_px": 643,
+        "t_px": 272,
+        "r_px": 905,
+        "b_px": 544
+      },
+      {
+        "label": "name",
+        "l_px": 643,
+        "t_px": 589,
+        "r_px": 915,
+        "b_px": 648
+      }
+    ]
+  },
+  {
+    "sha256": "f52e44d02a0e64aa3ca8d045d682d8d8a32e8b6b5501aca9bd8d20c4fa2391cb",
+    "url": "https://www.linkedin.com/in/douwegroenevelt/",
+    "image_media_path": "word/media/42b54991f77638961f83dd28f744e98142e273e6.png",
+    "image_size_px": [
+      3024,
+      1554
+    ],
+    "boxes": []
+  },
+  {
+    "sha256": "fb6c41e3a7f148839aac1cb933299592fde5660cf2e01c35fa7a322e60f9cb5e",
+    "url": "https://www.linkedin.com/in/helenfanlegalai/",
+    "image_media_path": "word/media/fd67a875c86a0c41c69de48d089fe0168a7deb57.png",
+    "image_size_px": [
+      3024,
+      1554
+    ],
+    "boxes": [
+      {
+        "label": "ideal_crop",
+        "l_px": 594,
+        "t_px": 105,
+        "r_px": 1896,
+        "b_px": 1475
+      },
+      {
+        "label": "avatar",
+        "l_px": 641,
+        "t_px": 265,
+        "r_px": 911,
+        "b_px": 544
+      },
+      {
+        "label": "name",
+        "l_px": 632,
+        "t_px": 581,
+        "r_px": 833,
+        "b_px": 650
+      },
+      {
+        "label": "intro_card",
+        "l_px": 606,
+        "t_px": 905,
+        "r_px": 1874,
+        "b_px": 1460
+      }
+    ]
+  },
+  {
+    "sha256": "d73ddac9b6d698cb33ab3dc9b2d8df1eab179463e34d46aba0be923acf8ad4d0",
+    "url": "https://www.linkedin.com/in/helenfanlegalai/",
+    "image_media_path": "word/media/5f8da2f0f6fa69b215b154e991daf1386f176995.png",
+    "image_size_px": [
+      3024,
+      1554
+    ],
+    "boxes": []
+  },
+  {
+    "sha256": "efb89eb64c77a582a9b89ce4413785c610fb873e78808cf0e7c1c3efa82048a5",
+    "url": "https://www.linkedin.com/in/bettymmiller2/",
+    "image_media_path": "word/media/0e81b5f0f3c7b4c85f12a779754de71a0d2311db.png",
+    "image_size_px": [
+      3024,
+      1554
+    ],
+    "boxes": [
+      {
+        "label": "ideal_crop",
+        "l_px": 365,
+        "t_px": 133,
+        "r_px": 1987,
+        "b_px": 1522
+      },
+      {
+        "label": "avatar",
+        "l_px": 421,
+        "t_px": 349,
+        "r_px": 760,
+        "b_px": 680
+      },
+      {
+        "label": "name",
+        "l_px": 425,
+        "t_px": 734,
+        "r_px": 686,
+        "b_px": 803
+      },
+      {
+        "label": "buttons_row",
+        "l_px": 429,
+        "t_px": 1015,
+        "r_px": 950,
+        "b_px": 1118
+      },
+      {
+        "label": "intro_card",
+        "l_px": 382,
+        "t_px": 1162,
+        "r_px": 1965,
+        "b_px": 1499
+      }
+    ]
+  },
+  {
+    "sha256": "92fd3eab38b0e5eb686644e12c57d929cbd9ae532707de7577c0cbff7adf8f95",
+    "url": "https://www.linkedin.com/in/helenfanlegalai/",
+    "image_media_path": "word/media/82df73c36f93ef843c45ebb9b12f6f87c84754bb.png",
+    "image_size_px": [
+      3024,
+      1554
+    ],
+    "boxes": []
+  },
+  {
+    "sha256": "41554962bd072816071427e753ac0711d988c777ea1aac1d3462a47e5316a99d",
+    "url": "https://www.linkedin.com/in/vedjadhav17/",
+    "image_media_path": "word/media/276605a6969261e592ce0da232c31a44ab656c73.png",
+    "image_size_px": [
+      3024,
+      1622
+    ],
+    "boxes": [
+      {
+        "label": "ideal_crop",
+        "l_px": 367,
+        "t_px": 133,
+        "r_px": 1985,
+        "b_px": 1421
+      },
+      {
+        "label": "avatar",
+        "l_px": 423,
+        "t_px": 347,
+        "r_px": 762,
+        "b_px": 680
+      },
+      {
+        "label": "intro_card",
+        "l_px": 384,
+        "t_px": 1095,
+        "r_px": 1961,
+        "b_px": 1395
+      },
+      {
+        "label": "name",
+        "l_px": 423,
+        "t_px": 743,
+        "r_px": 669,
+        "b_px": 805
+      }
+    ]
+  },
+  {
+    "sha256": "475758576f021402dc3062b788403e120d0c1351c6a35e1be5bab100c91a6f4e",
+    "url": "https://www.linkedin.com/in/williamhgates/",
+    "image_media_path": "word/media/3e97635bd8c5ef5bbc8d6323664d6971a9129013.png",
+    "image_size_px": [
+      3024,
+      1558
+    ],
+    "boxes": [
+      {
+        "label": "ideal_crop",
+        "l_px": 367,
+        "t_px": 133,
+        "r_px": 1991,
+        "b_px": 1533
+      }
+    ]
+  }
+]

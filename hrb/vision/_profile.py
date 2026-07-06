@@ -187,15 +187,21 @@ def detect_linkedin_card(img: np.ndarray, cfg: dict, tuning: dict) -> BBox | Non
     card_right = runs[0][1]
 
     # --- frame: equal gray margin off the card edges ---
-    # The margin is one pixel value used on all framed sides (left, right,
-    # top, and below the About section) so the gray reads equal everywhere.
-    # It's derived from the image WIDTH; using height for the top/bottom
-    # would make those margins ~half the side gray since the capture is
-    # wider than it is tall.
+    # The margin is one pixel value used on the right, top, and below the
+    # About section so the gray reads equal there. It's derived from the
+    # image WIDTH; using height for the top/bottom would make those margins
+    # ~half the side gray since the capture is wider than it is tall. The
+    # LEFT uses a slightly smaller margin: the banner-derived card-left sits
+    # a hair right of the true visual edge, so the full margin reads as a
+    # touch too much gray on that side.
     margin = int(w * tuning.get("side_margin_pct", cfg.get("side_margin_pct", 0.6)) / 100.0)
-    crop_left = max(0, card_left - margin)
+    left_pct = tuning.get("left_margin_pct", cfg.get("left_margin_pct", 0.45))
+    left_margin = int(w * left_pct / 100.0)
+    top_pct = tuning.get("top_margin_pct", cfg.get("top_margin_pct", 0.5))
+    top_margin = int(w * top_pct / 100.0)
+    crop_left = max(0, card_left - left_margin)
     crop_right = min(w, card_right + margin)
-    crop_top = max(0, banner_top - margin)
+    crop_top = max(0, banner_top - top_margin)
 
     # --- bottom: cut just after the About section, with gray below ---
     # The profile is a stack of white cards (intro, About, then more
@@ -368,7 +374,10 @@ PROFILE_CONFIGS: dict[str, dict] = {
         # About section. side_margin_pct is that single margin (in pixels off
         # the width) used on all four framed sides so the gray reads equal.
         "nav_skip_frac": 0.02, "banner_top_frac": 0.10, "banner_bot_frac": 0.20,
-        "side_margin_pct": 0.6,
+        # left_margin_pct / top_margin_pct are a hair smaller than
+        # side_margin_pct: the banner-derived card-left and cover-photo top
+        # read a touch inside the true edges, so the full margin looks heavy.
+        "side_margin_pct": 0.6, "left_margin_pct": 0.45, "top_margin_pct": 0.5,
         # Bottom: cut after the Nth card down (intro + About = 2). Skip header
         # sub-gaps within intro_min_frac of the cover; a gap must be at least
         # min_gap_frac tall to count. max_height_frac is the no-gaps fallback.
