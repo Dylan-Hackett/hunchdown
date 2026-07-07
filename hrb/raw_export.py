@@ -22,6 +22,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _decode_hunchly_text(raw_bytes: bytes) -> str:
+    """Hunchly writes case_data files as UTF-8, but on Windows a page title or
+    note containing a curly quote/dash copied from a webpage can end up
+    encoded as Windows-1252 instead. Fall back to cp1252 (which accepts any
+    byte) so a single mis-encoded field doesn't blow up the whole case."""
+    try:
+        return raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw_bytes.decode("cp1252")
+
+
 @dataclass
 class PageEntry:
     page_id: str
@@ -45,11 +56,12 @@ class RawExport:
 
     def _load_index(self) -> None:
         try:
-            raw = self._zip.read("case_data/pages.csv").decode("utf-8")
+            raw_bytes = self._zip.read("case_data/pages.csv")
         except KeyError as e:
             raise ValueError(
                 f"{self.zip_path}: missing case_data/pages.csv — is this a Hunchly raw case zip?"
             ) from e
+        raw = _decode_hunchly_text(raw_bytes)
         names = set(self._zip.namelist())
         reader = csv.DictReader(io.StringIO(raw))
         for row in reader:
@@ -72,9 +84,10 @@ class RawExport:
 
     def _load_notes(self) -> None:
         try:
-            raw = self._zip.read("case_data/notes.json").decode("utf-8")
+            raw_bytes = self._zip.read("case_data/notes.json")
         except KeyError:
             return  # older Hunchly exports may not include notes.json
+        raw = _decode_hunchly_text(raw_bytes)
         try:
             entries = json.loads(raw)
         except json.JSONDecodeError:
