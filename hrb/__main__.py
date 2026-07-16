@@ -320,18 +320,32 @@ def run(
 
 
 def _norm_key(stem: str) -> str:
-    """Normalize a filename stem for pairing a docx with its zip: lowercase,
+    """Normalize a filename stem for PAIRING a docx with its zip: lowercase,
     keep only alphanumerics (drops spaces, colons, punctuation), then strip a
     trailing 'export'. So '716 export' and '7:16 export' both map to '716',
-    and 'Test Export' / 'Test' both map to 'test'."""
+    and a subject 'John Smith' / 'JohnSmith' both map to 'johnsmith' — robust to
+    space/caps differences between the docx and zip names."""
     k = re.sub(r"[^a-z0-9]", "", stem.lower())
     return re.sub(r"export$", "", k) or k
 
 
+_FS_UNSAFE = re.compile(r'[<>:"/\\|?*]')
+
+
+def _case_name(stem: str) -> str:
+    """Readable case name from a docx stem, preserving the subject's name and
+    spacing: drop a trailing 'export' word, strip characters that are illegal in
+    a Windows folder name, and trim. 'John Smith' -> 'John Smith';
+    '716 export' -> '716'; 'Test Export' -> 'Test'."""
+    name = re.sub(r"[\s_-]*export\s*$", "", stem, flags=re.IGNORECASE)
+    name = _FS_UNSAFE.sub("", name).strip()
+    return name or stem
+
+
 def _discover_pairs(directory: Path) -> list[tuple[Path, Path | None, str]]:
     """Pair each top-level .docx in `directory` with a .zip whose normalized key
-    matches. Returns (docx, zip_or_None, case_name) sorted by name. Skips Word
-    lock/temp files (~$...)."""
+    matches. Returns (docx, zip_or_None, case_name) sorted by name — case_name is
+    the readable subject name, not the pairing key. Skips Word lock/temp files."""
     zips: dict[str, Path] = {}
     for z in sorted(directory.glob("*.zip")):
         zips.setdefault(_norm_key(z.stem), z)
@@ -339,8 +353,7 @@ def _discover_pairs(directory: Path) -> list[tuple[Path, Path | None, str]]:
     for d in sorted(directory.glob("*.docx")):
         if d.name.startswith("~$"):
             continue
-        key = _norm_key(d.stem)
-        pairs.append((d, zips.get(key), key or d.stem))
+        pairs.append((d, zips.get(_norm_key(d.stem)), _case_name(d.stem)))
     return pairs
 
 
