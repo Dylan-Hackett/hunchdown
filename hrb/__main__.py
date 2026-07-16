@@ -319,19 +319,73 @@ def run(
     return case_dir
 
 
+def _norm_key(stem: str) -> str:
+    """Normalize a filename stem for pairing a docx with its zip: lowercase,
+    keep only alphanumerics (drops spaces, colons, punctuation), then strip a
+    trailing 'export'. So '716 export' and '7:16 export' both map to '716',
+    and 'Test Export' / 'Test' both map to 'test'."""
+    k = re.sub(r"[^a-z0-9]", "", stem.lower())
+    return re.sub(r"export$", "", k) or k
+
+
+def _discover_pairs(directory: Path) -> list[tuple[Path, Path | None, str]]:
+    """Pair each top-level .docx in `directory` with a .zip whose normalized key
+    matches. Returns (docx, zip_or_None, case_name) sorted by name. Skips Word
+    lock/temp files (~$...)."""
+    zips: dict[str, Path] = {}
+    for z in sorted(directory.glob("*.zip")):
+        zips.setdefault(_norm_key(z.stem), z)
+    pairs: list[tuple[Path, Path | None, str]] = []
+    for d in sorted(directory.glob("*.docx")):
+        if d.name.startswith("~$"):
+            continue
+        key = _norm_key(d.stem)
+        pairs.append((d, zips.get(key), key or d.stem))
+    return pairs
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="hrb", description="Hunchly Report Builder")
-    p.add_argument("--input", required=True, type=Path, help="Hunchly-exported .docx")
+    p.add_argument("--input", type=Path, help="Hunchly-exported .docx (omit when using --batch)")
     p.add_argument("--raw-zip", type=Path, default=None, help="Hunchly raw case .zip (for Tier 2 MHTML date extraction)")
     p.add_argument("--output", type=Path, default=Path("./output"), help="Output root directory")
-    p.add_argument("--case", required=True, help="Case name (used in output folder + locator title)")
+    p.add_argument("--case", help="Case name (used in output folder + locator title; omit when using --batch)")
     p.add_argument("--presets", type=Path, default=Path("./presets"), help="Presets directory")
     p.add_argument("--no-pdf", action="store_true", help="Skip PDF export (docx only)")
     p.add_argument("--no-download-videos", action="store_true",
                    help="Skip downloading videos from live post URLs "
                         "(video download runs by default for every downloadable link)")
+    p.add_argument("--batch", nargs="?", const=Path("."), default=None, type=Path,
+                   metavar="DIR",
+                   help="Process every docx+zip pair in DIR (default '.'), auto-pairing "
+                        "each docx with its zip and deriving the case name from the "
+                        "filename. Ignores --input/--case.")
 
     args = p.parse_args(argv)
+
+    if args.batch is not None:
+        pairs = _discover_pairs(args.batch)
+        if not pairs:
+            print(f"No .docx files found in {args.batch}")
+            return 1
+        print(f"Batch: found {len(pairs)} docx in {args.batch}")
+        for docx, zip_, case in pairs:
+            zlabel = zip_.name if zip_ else "NONE (URL-only dates, no MHTML/FB unscramble)"
+            print(f"\n=== {docx.name}  |  zip: {zlabel}  |  case: {case} ===")
+            case_dir = run(
+                input_docx=docx,
+                raw_zip=zip_,
+                output_root=args.output,
+                case_name=case,
+                presets_dir=args.presets,
+                no_pdf=args.no_pdf,
+                download_videos=not args.no_download_videos,
+            )
+            print(f"Done. Output: {case_dir}")
+        return 0
+
+    if not args.input or not args.case:
+        p.error("--input and --case are required (or use --batch to process a whole folder)")
 
     case_dir = run(
         input_docx=args.input,
