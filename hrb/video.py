@@ -86,6 +86,9 @@ class VideoDownloadResult:
     video_id: str | None = None
     ext: str | None = None
     resolution: str | None = None
+    video_codec: str | None = None      # codec of the delivered file
+    transcoded_to_h264: bool = False    # True if we re-encoded for playability
+    source_video_codec: str | None = None  # original codec, when transcoded
     duration_s: float | None = None
     # As REPORTED BY THE PLATFORM at download time — a cross-check only, not an
     # authoritative post date (that stays the deterministic URL/DOM extraction).
@@ -111,6 +114,64 @@ def _ytdlp_version() -> str:
         return yt_dlp.version.__version__
     except Exception:
         return "unknown"
+
+
+# Video codecs that decode out-of-the-box in the players a deliverable lands in
+# (QuickTime/Preview, Word & PowerPoint embeds, Windows Media Player).
+_PLAYABLE_VCODECS = ("h264", "avc1", "mpeg4")
+
+
+def _probe_video(path: Path) -> tuple[str | None, str | None]:
+    """(codec, WxH) of the first video stream via ffprobe; (None, None) if absent.
+
+    Read from the downloaded file itself so both are accurate even when yt-dlp's
+    info dict omits them (e.g. Facebook's progressive sd/hd formats)."""
+    import shutil, subprocess
+    if shutil.which("ffprobe") is None:
+        return None, None
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0:nk=1",
+             str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        parts = [p for p in (out.stdout or "").strip().split(",") if p]
+        codec = parts[0] if parts else None
+        res = f"{parts[1]}x{parts[2]}" if len(parts) >= 3 else None
+        return codec, res
+    except Exception:
+        return None, None
+
+
+def _transcode_to_h264(path: Path) -> bool:
+    """Re-encode `path` in place to H.264/AAC mp4 for universal playback.
+
+    Used only as a last resort when a platform offered no H.264 variant (some
+    Facebook/Instagram reels are VP9-only). Writes to a temp file, then atomically
+    replaces the original. Returns True on success. This changes the bytes — the
+    caller records it as a compatibility re-encode in the audit.
+    """
+    import shutil, subprocess
+    if shutil.which("ffmpeg") is None:
+        return False
+    tmp = path.with_suffix(".h264.mp4")
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(path),
+             "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+             "-movflags", "+faststart", str(tmp)],
+            capture_output=True, text=True, timeout=600,
+        )
+        if out.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+            tmp.unlink(missing_ok=True)
+            return False
+        tmp.replace(path)
+        return True
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        return False
 
 
 def _sha256_file(path: Path) -> str:
@@ -155,10 +216,18 @@ def download_video(job: VideoJob, videos_dir: Path, case_dir: Path) -> VideoDown
         "socket_timeout": 30,
         "retries": 3,
         "outtmpl": str(out_stem) + ".%(ext)s",
-        # Prefer an mp4 video+audio pair (no remux needed), then a single mp4,
-        # then whatever's best — so we get a playable .mp4 with the least
-        # dependence on ffmpeg, but never fail just because mp4 isn't offered.
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        # Prefer H.264 video + AAC audio. This is the codec that actually plays
+        # everywhere the deliverable goes (QuickTime/Preview, Word/PowerPoint
+        # embeds, Windows Media Player). Selecting by container alone ([ext=mp4])
+        # is NOT enough: Facebook serves VP9-in-mp4 for its adaptive streams,
+        # which those players can't decode — so we match the CODEC, then fall
+        # back to a progressive mp4 (FB's sd/hd, also H.264), then anything.
+        "format": (
+            "bv*[vcodec~='^(avc|h264)']+ba[acodec~='^(mp4a|aac)']/"
+            "b[vcodec~='^(avc|h264)']/"
+            "b[ext=mp4]/"
+            "bv*+ba/b"
+        ),
         "merge_output_format": "mp4",
     }
 
@@ -192,17 +261,28 @@ def download_video(job: VideoJob, videos_dir: Path, case_dir: Path) -> VideoDown
         return base
 
     base.status = "downloaded"
-    base.output_file = str(filepath.relative_to(case_dir)) if case_dir in filepath.parents else str(filepath)
-    base.output_sha256 = _sha256_file(filepath)
-    base.output_size_bytes = filepath.stat().st_size
     base.video_id = info.get("id")
-    base.ext = filepath.suffix.lstrip(".")
-    base.resolution = info.get("resolution") or (
-        f"{info.get('width')}x{info.get('height')}" if info.get("width") else None
-    )
     base.duration_s = info.get("duration")
     base.reported_upload_date = info.get("upload_date")
     base.reported_timestamp = info.get("timestamp")
+
+    codec, _ = _probe_video(filepath)
+    # Last resort: the platform offered no H.264 variant (VP9/AV1-only). Re-encode
+    # so the file actually plays in the deliverable's viewers. Recorded as a
+    # compatibility transcode; the authoritative evidence remains the Hunchly
+    # capture + the source URL.
+    if codec and codec.lower() not in _PLAYABLE_VCODECS and _transcode_to_h264(filepath):
+        base.transcoded_to_h264 = True
+        base.source_video_codec = codec
+
+    base.output_file = str(filepath.relative_to(case_dir)) if case_dir in filepath.parents else str(filepath)
+    base.output_sha256 = _sha256_file(filepath)
+    base.output_size_bytes = filepath.stat().st_size
+    base.ext = filepath.suffix.lstrip(".")
+    base.video_codec, probed_res = _probe_video(filepath)
+    base.resolution = probed_res or info.get("resolution") or (
+        f"{info.get('width')}x{info.get('height')}" if info.get("width") else None
+    )
     _write_sidecar(out_stem, base)
     return base
 
@@ -225,7 +305,14 @@ def download_all(jobs: list[VideoJob], videos_dir: Path, case_dir: Path,
         log(f"  [{i}/{len(jobs)}] {job.filename_stem}  {job.url}")
         res = download_video(job, videos_dir, case_dir)
         if res.status == "downloaded":
-            log(f"      -> {res.output_file}  ({res.resolution}, {res.output_size_bytes:,} bytes)")
+            note = ""
+            if res.transcoded_to_h264:
+                note = f"  (re-encoded from {res.source_video_codec} for playback)"
+            elif res.video_codec and res.video_codec.lower() not in _PLAYABLE_VCODECS:
+                note = (f"  ** WARNING: codec {res.video_codec} may not play and could "
+                        f"not be transcoded (ffmpeg missing?) **")
+            log(f"      -> {res.output_file}  ({res.resolution} {res.video_codec}, "
+                f"{res.output_size_bytes:,} bytes){note}")
         else:
             log(f"      -> {res.status}: {res.error or ''}")
         results.append(res)
