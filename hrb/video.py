@@ -43,7 +43,9 @@ LIVE_FETCH_NOTE = (
 # through (an Instagram /p/ photo) come back as status "no_video", not an error.
 _VIDEO_URL_PATTERNS = [
     r"tiktok\.com/@[^/]+/video/\d+",
-    r"tiktok\.com/@[^/]+/photo/\d+",          # slideshow; yt-dlp renders to mp4
+    # NOTE: tiktok /photo/ slideshows are intentionally excluded — yt-dlp
+    # rejects them as "Unsupported URL", so there's no video to fetch. The
+    # slideshow's stills are already preserved in the Hunchly capture image.
     r"instagram\.com/(?:reel|tv|p)/[^/?#]+",
     r"youtube\.com/(?:watch\?v=|shorts/)|youtu\.be/",
     r"facebook\.com/(?:[^/]+/videos/|reel/|watch/?\?v=|watch/\?v=)",
@@ -153,9 +155,10 @@ def download_video(job: VideoJob, videos_dir: Path, case_dir: Path) -> VideoDown
         "socket_timeout": 30,
         "retries": 3,
         "outtmpl": str(out_stem) + ".%(ext)s",
-        # best video+audio, merged to mp4; falls back to best single progressive
-        # format when there's nothing to merge or ffmpeg is unavailable.
-        "format": "bv*+ba/b",
+        # Prefer an mp4 video+audio pair (no remux needed), then a single mp4,
+        # then whatever's best — so we get a playable .mp4 with the least
+        # dependence on ffmpeg, but never fail just because mp4 isn't offered.
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
     }
 
@@ -213,6 +216,10 @@ def _write_sidecar(out_stem: Path, result: VideoDownloadResult) -> None:
 def download_all(jobs: list[VideoJob], videos_dir: Path, case_dir: Path,
                  log=print) -> list[VideoDownloadResult]:
     """Download every job, logging progress. Returns all records for the manifest."""
+    import shutil
+    if shutil.which("ffmpeg") is None:
+        log("  warning: ffmpeg not found on PATH — downloads that need an "
+            "audio+video merge or mp4 remux may fail or land as non-mp4.")
     results: list[VideoDownloadResult] = []
     for i, job in enumerate(jobs, start=1):
         log(f"  [{i}/{len(jobs)}] {job.filename_stem}  {job.url}")
