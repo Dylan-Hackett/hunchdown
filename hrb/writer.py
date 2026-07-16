@@ -45,6 +45,7 @@ class ExhibitInput:
     date_result: DateResult           # post_date must be set (sort key)
     preset: Preset
     exhibit_number: int               # 1-indexed within this platform doc
+    note: str | None = None           # analyst's Hunchly note (gates page-title rows)
 
 
 def _png_dims(data: bytes) -> tuple[int, int]:
@@ -360,6 +361,9 @@ def _resize_table_image(
     }
 
 
+_KEEP_PAGE_TITLE_RE = _re.compile(r"\bpage\b", _re.IGNORECASE)
+
+
 def _modify_table_for_exhibit(
     tbl: etree._Element,
     ex: ExhibitInput,
@@ -369,6 +373,12 @@ def _modify_table_for_exhibit(
     decision = _resize_table_image(tbl, ex.capture, ex.preset, media_bytes_lookup)
     _tidy_url_row(tbl)
     _swap_updated_date(tbl, _format_post_date(ex))
+    # Drop the Page Title label + value rows (indices 2, 3) — they're usually
+    # noise (post text / emoji). Keep them only when the analyst's note mentions
+    # "page" (i.e. the page title is meaningful here). Must run LAST: the ops
+    # above address rows by their original index.
+    if not _KEEP_PAGE_TITLE_RE.search(ex.note or ""):
+        _remove_table_rows(tbl, [2, 3])
     return decision
 
 

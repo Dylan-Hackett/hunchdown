@@ -60,7 +60,7 @@ def _process_captures(
     parsed: ParsedDocx,
     raw: RawExport | None,
 ) -> tuple[
-    dict[str, list[tuple[Capture, DateResult]]],   # platform -> post captures with dates
+    dict[str, list[tuple[Capture, DateResult, str | None]]],  # platform -> (capture, date, note)
     list[Capture],                                  # main-account captures
     list[tuple[Capture, DateResult]],               # review queue
 ]:
@@ -97,7 +97,7 @@ def _process_captures(
         if dr.post_date is None:
             review_queue.append((c, dr))
         else:
-            posts_by_platform.setdefault(platform, []).append((c, dr))
+            posts_by_platform.setdefault(platform, []).append((c, dr, note_text))
 
     return posts_by_platform, main_accounts, review_queue
 
@@ -169,13 +169,14 @@ def run(
 
         items_sorted = sorted(items, key=lambda x: x[1].post_date)
         exhibits: list[ExhibitInput] = []
-        for i, (c, dr) in enumerate(items_sorted, start=1):
+        for i, (c, dr, note) in enumerate(items_sorted, start=1):
             preset, _ = presets.match(c.url, platform)
             ex = ExhibitInput(
                 capture=c,
                 date_result=dr,
                 preset=preset,
                 exhibit_number=i,
+                note=note,
             )
             exhibits.append(ex)
             # Video filename mirrors the exhibit's slot in the deliverable doc:
