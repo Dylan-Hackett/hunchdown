@@ -37,6 +37,7 @@ from .platforms import (
 )
 from .presets import Preset, PresetLibrary
 from .raw_export import RawExport
+from .video import VideoJob, download_all, is_video_post
 from .writer import ExhibitInput, write_locator_docx, write_platform_docx
 
 
@@ -134,6 +135,7 @@ def run(
     case_name: str,
     presets_dir: Path,
     no_pdf: bool = False,
+    download_videos: bool = True,
 ) -> Path:
     parsed = parse_docx(input_docx)
     presets = PresetLibrary(presets_dir)
@@ -153,6 +155,7 @@ def run(
     manifest_exhibits: list[dict] = []
     platform_exhibit_counts: dict[str, int] = {}
     platform_exhibit_filenames: dict[str, str] = {}
+    video_jobs: list[VideoJob] = []
 
     for platform in PLATFORM_ORDER:
         items = posts_by_platform.get(platform, [])
@@ -169,6 +172,16 @@ def run(
                 preset=preset,
                 exhibit_number=i,
             ))
+            # Exhibit numbering matches the docx, so the video filename ties
+            # each download back to its exhibit (and, via sha256, its capture).
+            if download_videos and is_video_post(c.url):
+                video_jobs.append(VideoJob(
+                    url=c.url,
+                    platform=platform,
+                    exhibit_number=i,
+                    capture_sha256=c.sha256,
+                    filename_stem=f"{PLATFORM_DISPLAY_NAMES[platform]}_Exhibit_{i:02d}",
+                ))
 
         fname = _platform_filename(platform, "docx")
         out_path = case_dir / fname
@@ -250,6 +263,12 @@ def run(
             json.dumps(presets.unmatched, indent=2)
         )
 
+    video_results = []
+    if download_videos and video_jobs:
+        print(f"Downloading {len(video_jobs)} video(s) from live post URLs "
+              f"(supplementary preservation; see manifest chain-of-custody):")
+        video_results = download_all(video_jobs, case_dir / "videos", case_dir)
+
     pdf_status = "skipped"
     if not no_pdf:
         try:
@@ -271,6 +290,8 @@ def run(
         "review_required": len(review_queue),
         "platforms_found": sorted(posts_by_platform.keys()),
         "pdf_export_status": pdf_status,
+        "videos_downloaded": sum(1 for r in video_results if r.status == "downloaded"),
+        "video_downloads": [r.to_dict() for r in video_results],
         "exhibits": manifest_exhibits,
         "main_accounts": locator_entries,
         "review_queue": [
@@ -298,6 +319,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--case", required=True, help="Case name (used in output folder + locator title)")
     p.add_argument("--presets", type=Path, default=Path("./presets"), help="Presets directory")
     p.add_argument("--no-pdf", action="store_true", help="Skip PDF export (docx only)")
+    p.add_argument("--no-download-videos", action="store_true",
+                   help="Skip downloading videos from live post URLs "
+                        "(video download runs by default for every downloadable link)")
 
     args = p.parse_args(argv)
 
@@ -308,6 +332,7 @@ def main(argv: list[str] | None = None) -> int:
         case_name=args.case,
         presets_dir=args.presets,
         no_pdf=args.no_pdf,
+        download_videos=not args.no_download_videos,
     )
     print(f"Done. Output: {case_dir}")
     return 0
