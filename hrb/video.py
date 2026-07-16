@@ -144,34 +144,56 @@ def _probe_video(path: Path) -> tuple[str | None, str | None]:
         return None, None
 
 
-def _transcode_to_h264(path: Path) -> bool:
-    """Re-encode `path` in place to H.264/AAC mp4 for universal playback.
-
-    Used only as a last resort when a platform offered no H.264 variant (some
-    Facebook/Instagram reels are VP9-only). Writes to a temp file, then atomically
-    replaces the original. Returns True on success. This changes the bytes — the
-    caller records it as a compatibility re-encode in the audit.
-    """
-    import shutil, subprocess
-    if shutil.which("ffmpeg") is None:
-        return False
-    tmp = path.with_suffix(".h264.mp4")
+def _ffmpeg(args: list[str]) -> bool:
+    import subprocess
     try:
-        out = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(path),
-             "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
-             "-movflags", "+faststart", str(tmp)],
-            capture_output=True, text=True, timeout=600,
-        )
-        if out.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
-            tmp.unlink(missing_ok=True)
-            return False
-        tmp.replace(path)
-        return True
+        r = subprocess.run(["ffmpeg", "-y", *args], capture_output=True, text=True, timeout=600)
+        return r.returncode == 0
     except Exception:
-        tmp.unlink(missing_ok=True)
         return False
+
+
+def _ensure_h264_mp4(src: Path, out_stem: Path) -> tuple[Path, bool, str | None]:
+    """Guarantee the delivered file is H.264-in-.mp4.
+
+    Returns (final_path, transcoded, source_codec). Order of preference, cheapest
+    first — we only re-encode when we truly must:
+
+      * already H.264 in a .mp4 container  -> keep as-is (native stream, no change)
+      * H.264 in another container (.webm) -> remux to .mp4 (stream copy, no re-encode)
+      * not H.264 (VP9/AV1-only source)    -> transcode to H.264/AAC .mp4
+
+    ffmpeg missing: leave the file untouched (codec/ext recorded so the run can
+    warn), never crash.
+    """
+    import shutil
+    target = out_stem.with_suffix(".mp4")
+    codec, _ = _probe_video(src)
+    playable = bool(codec and codec.lower() in _PLAYABLE_VCODECS)
+
+    if playable and src.suffix.lower() == ".mp4":
+        return src, False, None
+    if shutil.which("ffmpeg") is None:
+        return src, False, None
+
+    tmp = out_stem.with_name(out_stem.name + ".__tmp__.mp4")
+    if playable:
+        # container-only fix: repackage the same streams into mp4, no re-encode.
+        ok = _ffmpeg(["-i", str(src), "-c", "copy", "-movflags", "+faststart", str(tmp)])
+        transcoded, source_codec = False, None
+    else:
+        ok = _ffmpeg(["-i", str(src), "-c:v", "libx264", "-preset", "medium",
+                      "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+                      "-movflags", "+faststart", str(tmp)])
+        transcoded, source_codec = True, codec
+
+    if not ok or not tmp.exists() or tmp.stat().st_size == 0:
+        tmp.unlink(missing_ok=True)
+        return src, False, None
+    if src != target:
+        src.unlink(missing_ok=True)
+    tmp.replace(target)
+    return target, transcoded, source_codec
 
 
 def _sha256_file(path: Path) -> str:
@@ -266,14 +288,10 @@ def download_video(job: VideoJob, videos_dir: Path, case_dir: Path) -> VideoDown
     base.reported_upload_date = info.get("upload_date")
     base.reported_timestamp = info.get("timestamp")
 
-    codec, _ = _probe_video(filepath)
-    # Last resort: the platform offered no H.264 variant (VP9/AV1-only). Re-encode
-    # so the file actually plays in the deliverable's viewers. Recorded as a
-    # compatibility transcode; the authoritative evidence remains the Hunchly
-    # capture + the source URL.
-    if codec and codec.lower() not in _PLAYABLE_VCODECS and _transcode_to_h264(filepath):
-        base.transcoded_to_h264 = True
-        base.source_video_codec = codec
+    # Guarantee the delivered file is H.264-in-.mp4 (remux the container when
+    # cheap, transcode only when the source has no H.264 variant). The
+    # authoritative evidence remains the Hunchly capture + the source URL.
+    filepath, base.transcoded_to_h264, base.source_video_codec = _ensure_h264_mp4(filepath, out_stem)
 
     base.output_file = str(filepath.relative_to(case_dir)) if case_dir in filepath.parents else str(filepath)
     base.output_sha256 = _sha256_file(filepath)
