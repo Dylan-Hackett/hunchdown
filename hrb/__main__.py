@@ -38,7 +38,12 @@ from .platforms import (
 from .presets import Preset, PresetLibrary
 from .raw_export import RawExport
 from .video import VideoJob, download_all, is_video_post
-from .writer import ExhibitInput, write_locator_docx, write_platform_docx
+from .writer import (
+    ExhibitInput,
+    _format_post_date,
+    write_locator_docx,
+    write_platform_docx,
+)
 
 
 def _platform_filename(platform: str, suffix: str = "docx") -> str:
@@ -166,21 +171,23 @@ def run(
         exhibits: list[ExhibitInput] = []
         for i, (c, dr) in enumerate(items_sorted, start=1):
             preset, _ = presets.match(c.url, platform)
-            exhibits.append(ExhibitInput(
+            ex = ExhibitInput(
                 capture=c,
                 date_result=dr,
                 preset=preset,
                 exhibit_number=i,
-            ))
-            # Exhibit numbering matches the docx, so the video filename ties
-            # each download back to its exhibit (and, via sha256, its capture).
+            )
+            exhibits.append(ex)
+            # Video filename mirrors the exhibit's slot in the deliverable doc:
+            # "<Platform> Video Item <N> (<post-date>)", with the same
+            # post-date string (and timezone handling) shown in the caption.
             if download_videos and is_video_post(c.url):
                 video_jobs.append(VideoJob(
                     url=c.url,
                     platform=platform,
                     exhibit_number=i,
                     capture_sha256=c.sha256,
-                    filename_stem=f"{PLATFORM_DISPLAY_NAMES[platform]}_Exhibit_{i:02d}",
+                    filename_stem=f"{PLATFORM_DISPLAY_NAMES[platform]} Video Item {i} ({_format_post_date(ex)})",
                 ))
 
         fname = _platform_filename(platform, "docx")
