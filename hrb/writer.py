@@ -448,6 +448,27 @@ def _modify_table_for_locator(
     return decision
 
 
+def _set_moderate_margins(sect_pr: etree._Element) -> None:
+    """Set Word's 'Moderate' page margins on this section: 1" top/bottom,
+    0.75" left/right. Values are twips (1 inch = 1440 twips). Header/footer/
+    gutter are preserved if already present, else given Word's defaults."""
+    pg = sect_pr.find(f"{{{W_NS}}}pgMar")
+    if pg is None:
+        pg = etree.Element(f"{{{W_NS}}}pgMar")
+        pg_sz = sect_pr.find(f"{{{W_NS}}}pgSz")   # pgMar must follow pgSz in the schema
+        if pg_sz is not None:
+            pg_sz.addnext(pg)
+        else:
+            sect_pr.insert(0, pg)
+    pg.set(f"{{{W_NS}}}top", "1440")
+    pg.set(f"{{{W_NS}}}bottom", "1440")
+    pg.set(f"{{{W_NS}}}left", "1080")
+    pg.set(f"{{{W_NS}}}right", "1080")
+    for attr, default in (("header", "708"), ("footer", "708"), ("gutter", "0")):
+        if pg.get(f"{{{W_NS}}}{attr}") is None:
+            pg.set(f"{{{W_NS}}}{attr}", default)
+
+
 def _write_docx_with_body(parsed: ParsedDocx, body_elements: list[etree._Element], output_path: Path) -> None:
     """Clone the source zip, replace word/document.xml with a body built from `body_elements`."""
     tree = etree.fromstring(parsed.doc_xml)
@@ -460,8 +481,10 @@ def _write_docx_with_body(parsed: ParsedDocx, body_elements: list[etree._Element
         body.remove(child)
     for el in body_elements:
         body.append(el)
-    if sect_pr is not None:
-        body.append(sect_pr)
+    if sect_pr is None:
+        sect_pr = etree.Element(f"{{{W_NS}}}sectPr")
+    _set_moderate_margins(sect_pr)
+    body.append(sect_pr)
 
     new_doc_xml = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone=True)
 
