@@ -37,7 +37,7 @@ from .platforms import (
 )
 from .presets import Preset, PresetLibrary
 from .raw_export import RawExport
-from .video import VideoJob, download_all, is_video_post
+from .video import VideoJob, is_video_post, sync_videos
 from .writer import (
     ExhibitInput,
     _format_post_date,
@@ -152,8 +152,10 @@ def run(
         if raw_ctx is not None:
             raw_ctx.close()
 
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    case_dir = output_root / f"{case_name}_{date_str}"
+    # Stable per-case folder (no date stamp) so re-runs after peer review reuse
+    # the same output — that's what lets the video sync find and renumber the
+    # videos already downloaded instead of fetching everything again.
+    case_dir = output_root / case_name
     case_dir.mkdir(parents=True, exist_ok=True)
 
     docx_outputs: list[Path] = []
@@ -273,9 +275,9 @@ def run(
 
     video_results = []
     if download_videos and video_jobs:
-        print(f"Downloading {len(video_jobs)} video(s) from live post URLs "
-              f"(supplementary preservation; see manifest chain-of-custody):")
-        video_results = download_all(video_jobs, case_dir / "videos", case_dir)
+        print(f"Syncing {len(video_jobs)} video(s) from live post URLs "
+              f"(reuse/renumber existing, download only new):")
+        video_results = sync_videos(video_jobs, case_dir / "videos", case_dir)
 
     pdf_status = "skipped"
     if not no_pdf:

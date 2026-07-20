@@ -15,7 +15,10 @@ This is deliberately a DISTINCT event from the original Hunchly capture:
     and the SHA-256 of what was actually fetched, and links back to the Hunchly
     capture's own hash so the two events stay traceable but never conflated.
   * It is therefore OUTSIDE the tool's "reproducible from the export alone"
-    guarantee. It is opt-in (CLI --download-videos) and never runs by default.
+    guarantee. It runs by default; disable with CLI --no-download-videos.
+
+Re-runs (e.g. after peer review adds posts) are incremental: sync_videos reuses
+and renumbers the videos already downloaded, fetching only genuinely-new posts.
 
 Requires network access, and ffmpeg for the muxed-format merges some platforms
 use (TikTok typically returns a single progressive MP4 and needs no merge).
@@ -23,8 +26,10 @@ use (TikTok typically returns a single progressive MP4 and needs no merge).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from dataclasses import dataclass, asdict
+import shutil
+from dataclasses import dataclass, asdict, fields as dc_fields
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -311,27 +316,83 @@ def _write_sidecar(out_stem: Path, result: VideoDownloadResult) -> None:
     (out_stem.with_suffix(".json")).write_text(json.dumps(result.to_dict(), indent=2))
 
 
-def download_all(jobs: list[VideoJob], videos_dir: Path, case_dir: Path,
-                 log=print) -> list[VideoDownloadResult]:
-    """Download every job, logging progress. Returns all records for the manifest."""
-    import shutil
+def _rel(path: Path, case_dir: Path) -> str:
+    return str(path.relative_to(case_dir)) if case_dir in path.parents else str(path)
+
+
+def _result_from_record(rec: dict) -> VideoDownloadResult:
+    """Rebuild a VideoDownloadResult from a sidecar dict, ignoring unknown keys
+    (older sidecars may lack fields added later)."""
+    known = {f.name for f in dc_fields(VideoDownloadResult)}
+    return VideoDownloadResult(**{k: v for k, v in rec.items() if k in known})
+
+
+def sync_videos(jobs: list[VideoJob], videos_dir: Path, case_dir: Path,
+                log=print) -> list[VideoDownloadResult]:
+    """Incremental video sync for re-runs (e.g. after peer review adds posts).
+
+    Matches each job to a video already downloaded in a prior run by
+    capture_sha256 (read from its sidecar), RENAMES it to the job's current
+    'Video Item N (date)' filename if its slot moved, and DOWNLOADS only jobs
+    with no existing file. Videos whose capture is no longer in the deliverable
+    are moved to videos/_unused (never deleted).
+
+    Existing files are first staged under a hash-keyed temp name so a cascade of
+    renumbers (insert one post -> every later item shifts by one) can't collide.
+    """
+    videos_dir.mkdir(parents=True, exist_ok=True)
     if shutil.which("ffmpeg") is None:
-        log("  warning: ffmpeg not found on PATH — downloads that need an "
-            "audio+video merge or mp4 remux may fail or land as non-mp4.")
+        log("  warning: ffmpeg not found on PATH — VP9-only videos can't be transcoded to H.264.")
+
+    # Stage every existing (mp4 + sidecar) pair by capture hash.
+    staged: dict[str, tuple[Path, dict, str]] = {}   # sha -> (stash_mp4, record, orig_stem)
+    for jf in list(videos_dir.glob("*.json")):
+        try:
+            rec = json.loads(jf.read_text())
+        except Exception:
+            continue
+        sha = rec.get("capture_sha256")
+        mp4 = jf.with_suffix(".mp4")
+        if not sha or not mp4.exists():
+            continue
+        stash = videos_dir / f".stash_{sha}.mp4"
+        mp4.rename(stash)
+        jf.unlink()
+        staged[sha] = (stash, rec, mp4.stem)
+
     results: list[VideoDownloadResult] = []
     for i, job in enumerate(jobs, start=1):
-        log(f"  [{i}/{len(jobs)}] {job.filename_stem}  {job.url}")
-        res = download_video(job, videos_dir, case_dir)
-        if res.status == "downloaded":
-            note = ""
-            if res.transcoded_to_h264:
-                note = f"  (re-encoded from {res.source_video_codec} for playback)"
-            elif res.video_codec and res.video_codec.lower() not in _PLAYABLE_VCODECS:
-                note = (f"  ** WARNING: codec {res.video_codec} may not play and could "
-                        f"not be transcoded (ffmpeg missing?) **")
-            log(f"      -> {res.output_file}  ({res.resolution} {res.video_codec}, "
-                f"{res.output_size_bytes:,} bytes){note}")
+        prev = staged.pop(job.capture_sha256, None)
+        if prev is not None:
+            stash, rec, orig_stem = prev
+            target_mp4 = videos_dir / f"{job.filename_stem}.mp4"
+            stash.replace(target_mp4)
+            rec["exhibit_number"] = job.exhibit_number
+            rec["platform"] = job.platform
+            rec["output_file"] = _rel(target_mp4, case_dir)
+            (videos_dir / f"{job.filename_stem}.json").write_text(json.dumps(rec, indent=2))
+            verb = "kept" if orig_stem == job.filename_stem else f"renumbered from '{orig_stem}'"
+            log(f"  [{i}/{len(jobs)}] {job.filename_stem}  ({verb}, no re-download)")
+            results.append(_result_from_record(rec))
         else:
-            log(f"      -> {res.status}: {res.error or ''}")
-        results.append(res)
+            log(f"  [{i}/{len(jobs)}] {job.filename_stem}  (new — downloading)  {job.url}")
+            res = download_video(job, videos_dir, case_dir)
+            if res.status == "downloaded":
+                note = f"  (re-encoded from {res.source_video_codec})" if res.transcoded_to_h264 else ""
+                log(f"       -> {res.resolution} {res.video_codec}, {res.output_size_bytes:,} bytes{note}")
+            else:
+                log(f"       -> {res.status}: {res.error or ''}")
+            results.append(res)
+
+    # Orphans: prior videos whose capture is no longer in the deliverable
+    # (post removed during review). Preserve them under _unused, never delete.
+    if staged:
+        unused = videos_dir / "_unused"
+        unused.mkdir(exist_ok=True)
+        for sha, (stash, rec, orig_stem) in staged.items():
+            dest = unused / f"{orig_stem}.mp4"
+            stash.replace(dest)
+            (unused / f"{orig_stem}.json").write_text(json.dumps(rec, indent=2))
+            log(f"  orphaned (no longer in deliverable) -> _unused/{orig_stem}.mp4")
+
     return results
