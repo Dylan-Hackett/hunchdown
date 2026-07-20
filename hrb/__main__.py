@@ -344,6 +344,28 @@ def _case_name(stem: str) -> str:
     return name or stem
 
 
+def _resolve_target(target: str) -> tuple[Path, Path | None, str]:
+    """Resolve a single positional target to (docx, zip_or_None, case_name).
+
+    `target` may be a path to a .docx, or just a subject name ('John Smith') —
+    in which case we find the .docx in that folder (or the cwd) whose normalized
+    key matches, and pair its zip the same way batch mode does."""
+    p = Path(target)
+    if p.suffix.lower() == ".docx" and p.exists():
+        docx = p
+    else:
+        directory = p.parent if str(p.parent) not in ("", ".") else Path(".")
+        key = _norm_key(p.name)
+        matches = [d for d in sorted(directory.glob("*.docx"))
+                   if not d.name.startswith("~$") and _norm_key(d.stem) == key]
+        if not matches:
+            raise SystemExit(f"No .docx matching {target!r} found in {directory}/")
+        docx = matches[0]
+    key = _norm_key(docx.stem)
+    zips = [z for z in sorted(docx.parent.glob("*.zip")) if _norm_key(z.stem) == key]
+    return docx, (zips[0] if zips else None), _case_name(docx.stem)
+
+
 def _discover_pairs(directory: Path) -> list[tuple[Path, Path | None, str]]:
     """Pair each top-level .docx in `directory` with a .zip whose normalized key
     matches. Returns (docx, zip_or_None, case_name) sorted by name — case_name is
@@ -361,7 +383,11 @@ def _discover_pairs(directory: Path) -> list[tuple[Path, Path | None, str]]:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="hrb", description="Hunchly Report Builder")
-    p.add_argument("--input", type=Path, help="Hunchly-exported .docx (omit when using --batch)")
+    p.add_argument("target", nargs="?",
+                   help="Shortcut: a subject name or path to a .docx, e.g. "
+                        "'John Smith'. Finds the matching .docx + .zip and derives "
+                        "the case name. Use instead of --input/--raw-zip/--case.")
+    p.add_argument("--input", type=Path, help="Hunchly-exported .docx (omit when using a target or --batch)")
     p.add_argument("--raw-zip", type=Path, default=None, help="Hunchly raw case .zip (for Tier 2 MHTML date extraction)")
     p.add_argument("--output", type=Path, default=Path("./output"), help="Output root directory")
     p.add_argument("--case", help="Case name (used in output folder + locator title; omit when using --batch)")
@@ -399,14 +425,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Done. Output: {case_dir}")
         return 0
 
-    if not args.input or not args.case:
-        p.error("--input and --case are required (or use --batch to process a whole folder)")
+    if args.target:
+        input_docx, raw_zip, case_name = _resolve_target(args.target)
+        zlabel = raw_zip.name if raw_zip else "NONE (URL-only dates)"
+        print(f"{input_docx.name}  |  zip: {zlabel}  |  case: {case_name}")
+    elif args.input and args.case:
+        input_docx, raw_zip, case_name = args.input, args.raw_zip, args.case
+    else:
+        p.error("give a target (e.g. \"John Smith\"), or --input and --case, "
+                "or --batch to process a whole folder")
 
     case_dir = run(
-        input_docx=args.input,
-        raw_zip=args.raw_zip,
+        input_docx=input_docx,
+        raw_zip=raw_zip,
         output_root=args.output,
-        case_name=args.case,
+        case_name=case_name,
         presets_dir=args.presets,
         no_pdf=args.no_pdf,
         download_videos=not args.no_download_videos,
