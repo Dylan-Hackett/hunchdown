@@ -38,43 +38,71 @@ def _load_tuning() -> dict:
         }
 
 
-# ---------- Single post (media + sidebar) ----------
+# ---------- Single post (modal card) ----------
+#
+# Dylan's IG posts are captured as a MODAL: the post opens as a card floating in
+# front of the (dimmed) profile grid — a media panel on the left and a white
+# caption panel on the right. The crop target is that whole card.
+#
+# Detection (verified within ~5-10px of hand-annotated ideals on 8 posts, 0
+# failures on 9 held-out):
+#   * The white caption panel is the reliable landmark → gives the card's top,
+#     bottom, and right edge.
+#   * The media's LEFT edge is found via the dimming brightness-cap: the dimmed
+#     overlay caps background brightness near the page-background level (flat
+#     gaps AND darkened thumbnails alike top out there), while the undimmed modal
+#     reaches far brighter. So the leftmost column whose p95 brightness clears
+#     the cap is the media edge — robust even when the media itself is dark.
 
-_DARK_THRESHOLD = 30
-_MIN_POST_AREA_FRAC = 0.05
-_CENTER_BAND = (0.15, 0.85)
-_EDGE_MARGIN_PX = 5
-_MAX_WIDTH_FRAC = 0.95
+_MODAL_WHITE = 235            # gray >= this counts as caption-panel white
+_MODAL_CAP_MARGIN = 25        # p95 must clear bg by this to count as undimmed
 
 
-def _detect_single_post(img: np.ndarray, requested: list[str]) -> dict[str, BBox] | None:
+def _detect_modal_post(img: np.ndarray) -> BBox | None:
     h, w = img.shape[:2]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, mask = cv2.threshold(gray, _DARK_THRESHOLD, 255, cv2.THRESH_BINARY)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((40, 40), np.uint8))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((10, 10), np.uint8))
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # dimmed background level, sampled from a flat strip left of any modal
+    # (nav ends ~0.04w, the media never starts before ~0.13w).
+    bg = int(np.median(g[:, int(w * 0.05):int(w * 0.13)]))
 
-    n, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-    img_area = w * h
-    candidates: list[tuple[int, int, int, int]] = []
-    for i in range(1, n):
-        x, y, cw, ch, area = stats[i]
-        if x < _EDGE_MARGIN_PX or (x + cw) > (w - _EDGE_MARGIN_PX):
-            continue
-        if area < img_area * _MIN_POST_AREA_FRAC:
-            continue
-        if cw > w * _MAX_WIDTH_FRAC:
-            continue
-        cx = x + cw // 2
-        if not (w * _CENTER_BAND[0] <= cx <= w * _CENTER_BAND[1]):
-            continue
-        candidates.append((int(x), int(y), int(cw), int(ch)))
-
-    if not candidates:
+    # caption panel: the widest tall white column-run in the right ~55%.
+    white = g >= _MODAL_WHITE
+    colw = white[int(h * 0.15):int(h * 0.90)].mean(axis=0)
+    is_w = colw > 0.5
+    runs: list[tuple[int, int]] = []
+    s = None
+    for x in range(w):
+        if is_w[x] and s is None:
+            s = x
+        elif not is_w[x] and s is not None:
+            runs.append((s, x)); s = None
+    if s is not None:
+        runs.append((s, w))
+    runs = [r for r in runs if r[1] - r[0] > w * 0.08 and (r[0] + r[1]) / 2 > w * 0.45]
+    if not runs:
         return None
-    candidates.sort(key=lambda s: s[2] * s[3], reverse=True)
-    x, y, cw, ch = candidates[0]
-    return BBox(x, y, x + cw, y + ch)
+    cl, cr = max(runs, key=lambda r: r[1] - r[0])
+
+    # caption vertical extent → card top/bottom
+    roww = white[:, cl:cr].mean(axis=1)
+    rows = np.where(roww > 0.5)[0]
+    if rows.size == 0:
+        return None
+    ct, cb = int(rows.min()), int(rows.max())
+
+    # media left: leftmost column whose p95 brightness clears the dimming cap,
+    # smoothed so a stray bright pixel in the dimmed area doesn't count.
+    band = g[ct:cb]
+    p95 = np.percentile(band, 95, axis=0)
+    modal = (p95 > bg + _MODAL_CAP_MARGIN).astype(np.float32)
+    sm = np.convolve(modal, np.ones(15) / 15, mode="same")
+    floor = int(w * 0.03)
+    cand = np.where(sm[floor:cl] > 0.4)[0]
+    media_left = (int(cand.min()) + floor) if cand.size else cl
+
+    if cr - media_left < w * 0.2 or cb - ct < h * 0.2:
+        return None
+    return BBox(media_left, ct, cr, cb)
 
 
 # ---------- Profile / main account ----------
@@ -367,7 +395,7 @@ def detect(
     if post_style == "main_account":
         return _detect_profile(img, requested)
 
-    post = _detect_single_post(img, requested)
+    post = _detect_modal_post(img)
     if post is None:
         return None
     out: dict[str, BBox] = {}
