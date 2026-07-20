@@ -129,6 +129,23 @@ _URL_DECODERS: dict[str, tuple[callable, str]] = {
 }
 
 
+def try_ytdlp(ts: int | None) -> DateResult | None:
+    """The platform's own creation_time (unix seconds) via a live yt-dlp lookup.
+    Sits above the MHTML tier — this is the real upload time, and it's the only
+    signal for Facebook/Instagram videos whose saved MHTML has no date at all
+    (scripts stripped). LIVE FETCH: not reproducible from the export alone."""
+    if not ts:
+        return None
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    return DateResult(
+        dt,
+        "ytdlp_creation_time",
+        "platform_reported",
+        notes="platform-reported creation_time via yt-dlp (live fetch; not "
+              "reproducible from the export alone)",
+    )
+
+
 def try_url(url: str, platform: str) -> DateResult | None:
     """Tier 1. Returns None if no decoder for this platform OR decode failed."""
     entry = _URL_DECODERS.get(platform)
@@ -185,15 +202,20 @@ def extract(
     note_text: str | None = None,
     post_body_hint: str | None = None,
     reference_year: int | None = None,
+    ytdlp_probe=None,
 ) -> DateResult:
     """
     Run the full cascade. Always returns a DateResult; post_date is None on
     total failure (caller routes that capture to REVIEW_REQUIRED).
 
     Order:
-        Tier 0: analyst note (most authoritative)
-        Tier 1: URL Snowflake/shortcode decode
-        Tier 2: MHTML parse (universal or FB unscrambler)
+        Tier 0: analyst note (manual override; wins)
+        Tier 1: URL Snowflake/shortcode decode (deterministic, reproducible)
+        Tier 2: yt-dlp creation_time (live fetch; the platform's real upload
+                time — primary for Facebook/Instagram videos, whose MHTML has no
+                date). Probed lazily, only when the URL didn't decode, so the
+                deterministic decode still wins for TikTok/X/etc.
+        Tier 3: MHTML parse (universal or FB unscrambler)
     """
     r = try_note(note_text)
     if r:
@@ -202,6 +224,11 @@ def extract(
     r = try_url(url, platform)
     if r:
         return r
+
+    if ytdlp_probe is not None:
+        r = try_ytdlp(ytdlp_probe(url))
+        if r:
+            return r
 
     if mhtml_bytes:
         r = try_mhtml(

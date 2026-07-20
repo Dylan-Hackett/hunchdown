@@ -37,7 +37,7 @@ from .platforms import (
 )
 from .presets import Preset, PresetLibrary
 from .raw_export import RawExport
-from .video import VideoJob, is_video_post, sync_videos
+from .video import VideoJob, is_video_post, probe_creation_time, sync_videos
 from .writer import (
     ExhibitInput,
     _format_post_date,
@@ -92,6 +92,7 @@ def _process_captures(
             note_text=note_text,
             post_body_hint=c.page_title or None,
             reference_year=reference_year,
+            ytdlp_probe=probe_creation_time,
         )
 
         if dr.post_date is None:
@@ -169,7 +170,12 @@ def run(
         if not items:
             continue
 
-        items_sorted = sorted(items, key=lambda x: x[1].post_date)
+        # Normalize naive dates (FB unscrambler) to UTC for sorting so they can
+        # be compared against tz-aware ones (yt-dlp / URL decode).
+        def _sort_key(item):
+            dt = item[1].post_date
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        items_sorted = sorted(items, key=_sort_key)
         exhibits: list[ExhibitInput] = []
         for i, (c, dr, note) in enumerate(items_sorted, start=1):
             preset, _ = presets.match(c.url, platform)

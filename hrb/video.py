@@ -64,6 +64,32 @@ def is_video_post(url: str) -> bool:
     return bool(_VIDEO_URL_RE.search(url or ""))
 
 
+def probe_creation_time(url: str) -> int | None:
+    """The video's creation/upload time (unix seconds) as reported by the
+    platform, via a yt-dlp metadata lookup (no download). Returns None for
+    non-video URLs or on any failure.
+
+    This is a LIVE fetch from the post URL — the platform's own creation_time,
+    which modern Facebook/Instagram strip from the saved MHTML. It is therefore
+    NOT reproducible from the export alone; the caller discloses that in the
+    date's source/notes."""
+    if not is_video_post(url):
+        return None
+    try:
+        import yt_dlp
+        opts = {
+            "quiet": True, "no_warnings": True, "noprogress": True,
+            "logger": _SilentLogger(), "skip_download": True,
+            "noplaylist": True, "socket_timeout": 30,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        ts = (info or {}).get("timestamp")
+        return int(ts) if ts else None
+    except Exception:
+        return None
+
+
 @dataclass
 class VideoJob:
     """One capture to attempt a video download for."""
