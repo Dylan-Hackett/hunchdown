@@ -126,11 +126,16 @@ def run_annotator(captures, out_path: Path) -> None:
     state = {"idx": 0, "image": None, "scale": 1.0}
 
     CORNER_PICK_PX = 14
-    SCALE_MAX_W = 1400
-    SCALE_MAX_H = 820
 
     root = tk.Tk()
     root.title("HRB landmark annotator")
+    root.geometry("+10+10")   # anchor top-left so nothing runs off the bottom
+
+    # Fit the canvas to the ACTUAL screen so tall captures aren't cut off.
+    # Reserve room for the menu bar, dock, title bar, and the ~5 control rows
+    # stacked above the canvas.
+    SCALE_MAX_W = root.winfo_screenwidth() - 80
+    SCALE_MAX_H = root.winfo_screenheight() - 340
 
     # ─── top status ────────────────────────────────────────────────────────
     info = tk.Label(root, text="", anchor="w", justify="left",
