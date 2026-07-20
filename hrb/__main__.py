@@ -324,11 +324,12 @@ def run(
 def _norm_key(stem: str) -> str:
     """Normalize a filename stem for PAIRING a docx with its zip: lowercase,
     keep only alphanumerics (drops spaces, colons, punctuation), then strip a
-    trailing 'export'. So '716 export' and '7:16 export' both map to '716',
-    and a subject 'John Smith' / 'JohnSmith' both map to 'johnsmith' — robust to
-    space/caps differences between the docx and zip names."""
+    trailing 'hunchly' or 'export'. So 'John Smith Hunchly' and 'John Smith' both
+    map to 'johnsmith' (production naming: '<subject> hunchly'), and the older
+    '716 export' / '7:16 export' both map to '716' — robust to space/caps
+    differences between the docx and zip names."""
     k = re.sub(r"[^a-z0-9]", "", stem.lower())
-    return re.sub(r"export$", "", k) or k
+    return re.sub(r"(?:hunchly|export)$", "", k) or k
 
 
 _FS_UNSAFE = re.compile(r'[<>:"/\\|?*]')
@@ -336,10 +337,10 @@ _FS_UNSAFE = re.compile(r'[<>:"/\\|?*]')
 
 def _case_name(stem: str) -> str:
     """Readable case name from a docx stem, preserving the subject's name and
-    spacing: drop a trailing 'export' word, strip characters that are illegal in
-    a Windows folder name, and trim. 'John Smith' -> 'John Smith';
-    '716 export' -> '716'; 'Test Export' -> 'Test'."""
-    name = re.sub(r"[\s_-]*export\s*$", "", stem, flags=re.IGNORECASE)
+    spacing: drop a trailing 'hunchly' or 'export' word, strip characters that
+    are illegal in a Windows folder name, and trim. 'John Smith Hunchly' ->
+    'John Smith'; '716 export' -> '716'; 'Test Export' -> 'Test'."""
+    name = re.sub(r"[\s_-]*(?:hunchly|export)\s*$", "", stem, flags=re.IGNORECASE)
     name = _FS_UNSAFE.sub("", name).strip()
     return name or stem
 
