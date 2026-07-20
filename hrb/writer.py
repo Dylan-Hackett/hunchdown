@@ -469,8 +469,53 @@ def _set_moderate_margins(sect_pr: etree._Element) -> None:
             pg.set(f"{{{W_NS}}}{attr}", default)
 
 
-def _write_docx_with_body(parsed: ParsedDocx, body_elements: list[etree._Element], output_path: Path) -> None:
-    """Clone the source zip, replace word/document.xml with a body built from `body_elements`."""
+_HEADER_PART = "word/header_hrb.xml"
+_HEADER_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"
+_HEADER_REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
+
+
+def _build_header_xml(label: str) -> bytes:
+    """Header part: '<label> ' followed by a live PAGE field, Times New Roman
+    12pt (sz is half-points, so 24).
+
+    The page number uses the explicit fldChar begin/separate/end construction
+    (not fldSimple) with the font on EVERY run — including the result run — so
+    Word keeps the 12pt when it re-evaluates the field on open/print."""
+    esc = label.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    rpr = ('<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" '
+           'w:cs="Times New Roman"/><w:sz w:val="24"/><w:szCs w:val="24"/>')
+
+    def run(inner: str) -> str:
+        return f'<w:r><w:rPr>{rpr}</w:rPr>{inner}</w:r>'
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:p><w:pPr><w:rPr>{rpr}</w:rPr></w:pPr>'
+        + run(f'<w:t xml:space="preserve">{esc} </w:t>')
+        + run('<w:fldChar w:fldCharType="begin"/>')
+        + run('<w:instrText xml:space="preserve"> PAGE </w:instrText>')
+        + run('<w:fldChar w:fldCharType="separate"/>')
+        + run('<w:t>1</w:t>')
+        + run('<w:fldChar w:fldCharType="end"/>')
+        + '</w:p></w:hdr>'
+    ).encode("utf-8")
+
+
+def _next_rid(rels_xml: bytes) -> str:
+    ids = [int(m) for m in _re.findall(rb'Id="rId(\d+)"', rels_xml)]
+    return f"rId{(max(ids) + 1) if ids else 1}"
+
+
+def _write_docx_with_body(
+    parsed: ParsedDocx,
+    body_elements: list[etree._Element],
+    output_path: Path,
+    header_label: str | None = None,
+) -> None:
+    """Clone the source zip, replace word/document.xml with a body built from
+    `body_elements`. When `header_label` is given, strip any footer and add a
+    header showing '<label> <page number>' (Times New Roman 12pt)."""
     tree = etree.fromstring(parsed.doc_xml)
     body = tree.find(f"{{{W_NS}}}body")
     if body is None:
@@ -484,18 +529,46 @@ def _write_docx_with_body(parsed: ParsedDocx, body_elements: list[etree._Element
     if sect_pr is None:
         sect_pr = etree.Element(f"{{{W_NS}}}sectPr")
     _set_moderate_margins(sect_pr)
-    body.append(sect_pr)
 
+    header_xml = new_rels = new_ct = None
+    if header_label is not None:
+        # drop the footer entirely
+        for fr in sect_pr.findall(f"{{{W_NS}}}footerReference"):
+            sect_pr.remove(fr)
+        with zipfile.ZipFile(io.BytesIO(parsed.zip_bytes)) as zf:
+            rels_xml = zf.read("word/_rels/document.xml.rels")
+            ct_xml = zf.read("[Content_Types].xml")
+        rid = _next_rid(rels_xml)
+        hr = etree.Element(f"{{{W_NS}}}headerReference")
+        hr.set(f"{{{W_NS}}}type", "default")
+        hr.set(f"{{{R_NS}}}id", rid)
+        sect_pr.insert(0, hr)   # header/footer refs lead the sectPr
+        header_xml = _build_header_xml(header_label)
+        rel = (f'<Relationship Id="{rid}" Type="{_HEADER_REL_TYPE}" '
+               f'Target="header_hrb.xml"/>').encode("utf-8")
+        new_rels = rels_xml.replace(b"</Relationships>", rel + b"</Relationships>")
+        override = (f'<Override PartName="/{_HEADER_PART}" '
+                    f'ContentType="{_HEADER_CT}"/>').encode("utf-8")
+        new_ct = ct_xml.replace(b"</Types>", override + b"</Types>")
+
+    body.append(sect_pr)
     new_doc_xml = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(io.BytesIO(parsed.zip_bytes)) as zf:
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as out:
             for item in zf.infolist():
-                if item.filename == "word/document.xml":
+                fn = item.filename
+                if fn == "word/document.xml":
                     out.writestr(item, new_doc_xml)
+                elif header_label is not None and fn == "word/_rels/document.xml.rels":
+                    out.writestr(item, new_rels)
+                elif header_label is not None and fn == "[Content_Types].xml":
+                    out.writestr(item, new_ct)
                 else:
-                    out.writestr(item, zf.read(item.filename))
+                    out.writestr(item, zf.read(fn))
+            if header_xml is not None:
+                out.writestr(_HEADER_PART, header_xml)
 
 
 def _media_lookup_for(parsed: ParsedDocx):
@@ -533,7 +606,8 @@ def write_platform_docx(
     src_tables = tree.find(f"{{{W_NS}}}body").findall(f"{{{W_NS}}}tbl")
     media_lookup = _media_lookup_for(parsed)
 
-    elements: list[etree._Element] = [_section_heading(f"{platform_display} Exhibits")]
+    # No on-page heading — the platform name lives in the page header instead.
+    elements: list[etree._Element] = []
     decisions: list[dict] = []
     for i, ex in enumerate(exhibits):
         cloned = copy.deepcopy(src_tables[ex.capture.index])
@@ -542,7 +616,7 @@ def write_platform_docx(
         if i < len(exhibits) - 1:
             elements.append(_make_page_break())
 
-    _write_docx_with_body(parsed, elements, output_path)
+    _write_docx_with_body(parsed, elements, output_path, header_label=platform_display)
     return decisions
 
 
@@ -568,7 +642,9 @@ def write_locator_docx(
     src_tables = tree.find(f"{{{W_NS}}}body").findall(f"{{{W_NS}}}tbl")
     media_lookup = _media_lookup_for(parsed)
 
-    elements: list[etree._Element] = [_section_heading(doc_title)]
+    # No on-page title — "Accounts Located" lives in the page header instead.
+    # Per-platform section headings inside the body stay (they organize the index).
+    elements: list[etree._Element] = []
 
     flat: list[tuple[str | None, Capture, Preset]] = []
     for platform_display, items in sections:
@@ -593,5 +669,5 @@ def write_locator_docx(
         if not is_last and not next_has_heading:
             elements.append(_make_page_break())
 
-    _write_docx_with_body(parsed, elements, output_path)
+    _write_docx_with_body(parsed, elements, output_path, header_label="Accounts Located")
     return decisions

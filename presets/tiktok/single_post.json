@@ -1,0 +1,18 @@
+{
+  "platform": "tiktok",
+  "post_style": "single_post",
+  "url_patterns": ["tiktok\\.com/@[^/]+/(?:video|photo)/\\d+"],
+  "crop": {
+    "left_pct": 0.25,
+    "top_pct": 0.4,
+    "right_pct": 0.25,
+    "bottom_pct": 0.45
+  },
+  "size": {
+    "mode": "fixed_width",
+    "width_inches": 6.62
+  },
+  "notes": "TikTok's desktop viewer (video panel + info/comment panel) fills the whole capture edge-to-edge, so the crop is the full frame minus a hair of edge trim (averaged from annotated ideals). No CV needed. Sized to fill the exhibit box at Moderate margins, same as IG.",
+  "created_by": "Dylan Hackett",
+  "created_at": "2026-07-20"
+}
