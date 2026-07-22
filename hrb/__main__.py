@@ -37,7 +37,13 @@ from .platforms import (
 )
 from .presets import Preset, PresetLibrary
 from .raw_export import RawExport
-from .video import VideoJob, is_video_post, probe_creation_time, sync_videos
+from .video import (
+    VideoJob,
+    is_video_post,
+    probe_creation_time,
+    sync_videos,
+    write_download_list,
+)
 from .writer import (
     ExhibitInput,
     _format_post_date,
@@ -142,6 +148,7 @@ def run(
     presets_dir: Path,
     no_pdf: bool = False,
     download_videos: bool = True,
+    emit_download_list: bool = False,
 ) -> Path:
     parsed = parse_docx(input_docx)
     presets = PresetLibrary(presets_dir)
@@ -190,13 +197,17 @@ def run(
             # Video filename mirrors the exhibit's slot in the deliverable doc:
             # "<Platform> Video Item <N> (<post-date>)", with the same
             # post-date string (and timezone handling) shown in the caption.
-            if download_videos and is_video_post(c.url):
+            # Built for every video post (used by both the local download and
+            # the VM download-list emit).
+            if is_video_post(c.url):
+                post_date_str = _format_post_date(ex)
                 video_jobs.append(VideoJob(
                     url=c.url,
                     platform=platform,
                     exhibit_number=i,
                     capture_sha256=c.sha256,
-                    filename_stem=f"{PLATFORM_DISPLAY_NAMES[platform]} Video Item {i} ({_format_post_date(ex)})",
+                    filename_stem=f"{PLATFORM_DISPLAY_NAMES[platform]} Video Item {i} ({post_date_str})",
+                    post_date=post_date_str,
                 ))
 
         fname = _platform_filename(platform, "docx")
@@ -280,7 +291,12 @@ def run(
         )
 
     video_results = []
-    if download_videos and video_jobs:
+    if emit_download_list and video_jobs:
+        list_path = case_dir / "download_list.csv"
+        write_download_list(video_jobs, list_path)
+        print(f"Wrote download list for the VM: {len(video_jobs)} video(s) -> "
+              f"{list_path.name} (run download_from_list.py on the VM)")
+    elif download_videos and video_jobs:
         print(f"Syncing {len(video_jobs)} video(s) from live post URLs "
               f"(reuse/renumber existing, download only new):")
         video_results = sync_videos(video_jobs, case_dir / "videos", case_dir)
@@ -403,6 +419,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-download-videos", action="store_true",
                    help="Skip downloading videos from live post URLs "
                         "(video download runs by default for every downloadable link)")
+    p.add_argument("--emit-download-list", action="store_true",
+                   help="Don't download videos here; instead write download_list.csv "
+                        "(final filenames + dates already computed) for a VM to run "
+                        "download_from_list.py against.")
     p.add_argument("--batch", nargs="?", const=Path("."), default=None, type=Path,
                    metavar="DIR",
                    help="Process every docx+zip pair in DIR (default '.'), auto-pairing "
@@ -428,6 +448,7 @@ def main(argv: list[str] | None = None) -> int:
                 presets_dir=args.presets,
                 no_pdf=args.no_pdf,
                 download_videos=not args.no_download_videos,
+                emit_download_list=args.emit_download_list,
             )
             print(f"Done. Output: {case_dir}")
         return 0
@@ -450,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
         presets_dir=args.presets,
         no_pdf=args.no_pdf,
         download_videos=not args.no_download_videos,
+        emit_download_list=args.emit_download_list,
     )
     print(f"Done. Output: {case_dir}")
     return 0

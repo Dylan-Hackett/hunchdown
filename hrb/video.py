@@ -97,7 +97,24 @@ class VideoJob:
     platform: str
     exhibit_number: int
     capture_sha256: str
-    filename_stem: str          # e.g. "TikTok_Exhibit_01" (no extension)
+    filename_stem: str          # e.g. "TikTok Video Item 3 (2026-01-13)" (no ext)
+    post_date: str = ""         # YYYY-MM-DD, for the download-list CSV
+
+
+def write_download_list(jobs: "list[VideoJob]", path: Path) -> None:
+    """Emit the download list for the VM: one row per video, with the FINAL
+    filename already computed locally (exhibit number + date), so the VM just
+    downloads each URL to the name it's given — no naming logic on the VM, no
+    reporting back."""
+    import csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["url", "filename_stem", "platform", "exhibit_number",
+                    "capture_sha256", "post_date"])
+        for j in jobs:
+            w.writerow([j.url, j.filename_stem, j.platform, j.exhibit_number,
+                        j.capture_sha256, j.post_date])
 
 
 @dataclass
